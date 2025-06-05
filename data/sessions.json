@@ -1,0 +1,36 @@
+{
+  "9426861c-8341-4284-bbca-120a92a3c7e8": {
+    "sessionId": "9426861c-8341-4284-bbca-120a92a3c7e8",
+    "createdAt": "2025-06-05T12:16:36.850Z",
+    "filePairs": []
+  },
+  "ce334c46-3caa-4601-b319-5f6f1d1b4bf5": {
+    "sessionId": "ce334c46-3caa-4601-b319-5f6f1d1b4bf5",
+    "createdAt": "2025-06-05T12:17:20.497Z",
+    "filePairs": []
+  },
+  "0c04d7e0-65a6-4ed8-802c-b3ae35e1fe80": {
+    "sessionId": "0c04d7e0-65a6-4ed8-802c-b3ae35e1fe80",
+    "createdAt": "2025-06-05T12:17:21.675Z",
+    "filePairs": []
+  },
+  "f8ece5d1-8df4-4171-ba9e-8dd8b0b1536a": {
+    "sessionId": "f8ece5d1-8df4-4171-ba9e-8dd8b0b1536a",
+    "createdAt": "2025-06-05T12:17:22.783Z",
+    "filePairs": []
+  },
+  "0be62fc8-e761-42ef-b99d-e6e909d5f4e7": {
+    "sessionId": "0be62fc8-e761-42ef-b99d-e6e909d5f4e7",
+    "createdAt": "2025-06-05T12:18:52.588Z",
+    "filePairs": [
+      {
+        "id": "85878418-3b06-4ecd-bddd-7fe70c0850f5",
+        "videoPath": "/uploads/videos/1749126096271-default.mp4",
+        "graphPath": "/uploads/graphs/1749126096271-Снимок экрана 2025-06-05 в 12.28.53.png",
+        "videoName": "default.mp4",
+        "graphName": "Снимок экрана 2025-06-05 в 12.28.53.png",
+        "uploadedAt": "2025-06-05T12:21:36.272Z"
+      }
+    ]
+  }
+}
