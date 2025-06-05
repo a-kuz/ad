@@ -31,7 +31,7 @@ export default function AllFilesPage() {
       } else {
         setError('Ошибка загрузки данных файлов');
       }
-    } catch (err) {
+    } catch {
       setError('Ошибка подключения к серверу');
     } finally {
       setLoading(false);

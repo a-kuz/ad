@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { saveFileToDisk } from '@/lib/fileStorage';
-import { addFilePairToSession, getSession } from '@/lib/database';
+import { addFilePairToSession, getSession, saveVideoAnalysis, saveComprehensiveAnalysis, savePairTitle } from '@/lib/database';
+import { performComprehensiveAnalysis } from '@/lib/comprehensiveAnalysis';
+import { generatePairTitle } from '@/lib/titleGeneration';
 import { join } from 'path';
 import { mkdir } from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
@@ -64,7 +66,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const session = getSession(sessionId);
+    const session = await getSession(sessionId);
     if (!session) {
       return NextResponse.json(
         { error: 'Session not found' },
@@ -96,12 +98,75 @@ export async function POST(req: NextRequest) {
       uploadedAt: new Date().toISOString(),
     };
 
-    addFilePairToSession(sessionId, uploadedFilePair);
+    await addFilePairToSession(sessionId, uploadedFilePair);
+
+    setImmediate(async () => {
+      try {
+        console.log(`Запуск комплексного анализа для пары файлов ${uploadedFilePair.id}`);
+        
+        const analysisResult = await performComprehensiveAnalysis(
+          sessionId,
+          uploadedFilePair.id,
+          videoPath,
+          graphPath
+        );
+        
+        const videoAnalysis = {
+          id: uuidv4(),
+          insights: `Комплексный анализ завершен. Найдено ${analysisResult.blockDropoutAnalysis.length} блоков контента.`,
+          recommendations: analysisResult.blockDropoutAnalysis
+            .filter(block => block.relativeDropout > 20)
+            .map(block => `Высокий отвал в блоке "${block.blockName}": ${block.relativeDropout.toFixed(1)}%`),
+          criticalMoments: analysisResult.blockDropoutAnalysis
+            .filter(block => block.relativeDropout > 30)
+            .map(block => ({
+              timestamp: block.startTime,
+              reason: `Критический отвал в блоке "${block.blockName}"`,
+              severity: 'high' as const
+            })),
+          overallScore: Math.max(0, Math.round(100 - analysisResult.blockDropoutAnalysis.reduce((avg, block) => avg + block.relativeDropout, 0) / analysisResult.blockDropoutAnalysis.length)),
+          improvementAreas: analysisResult.blockDropoutAnalysis
+            .filter(block => block.relativeDropout > 15)
+            .map(block => `Оптимизировать блок "${block.blockName}"`),
+          generatedAt: new Date().toISOString(),
+          report: JSON.stringify(analysisResult, null, 2)
+        };
+        
+        await saveVideoAnalysis(uploadedFilePair.id, videoAnalysis);
+        await saveComprehensiveAnalysis(uploadedFilePair.id, analysisResult);
+        
+        // Генерируем название на основе анализа
+        console.log(`Генерация названия для пары файлов ${uploadedFilePair.id}`);
+        const generatedTitle = await generatePairTitle(analysisResult);
+        await savePairTitle(uploadedFilePair.id, generatedTitle);
+        console.log(`Название сгенерировано: ${generatedTitle}`);
+        
+        console.log(`Комплексный анализ завершен для пары файлов ${uploadedFilePair.id}`);
+      } catch (error) {
+        console.error(`Ошибка при комплексном анализе пары файлов ${uploadedFilePair.id}:`, error);
+        
+        const errorAnalysis = {
+          id: uuidv4(),
+          insights: 'Ошибка при комплексном анализе видео',
+          recommendations: ['Попробуйте загрузить файлы снова'],
+          criticalMoments: [],
+          overallScore: 0,
+          improvementAreas: ['Требуется повторный анализ'],
+          generatedAt: new Date().toISOString()
+        };
+        
+        try {
+          await saveVideoAnalysis(uploadedFilePair.id, errorAnalysis);
+        } catch (saveError) {
+          console.error('Failed to save error analysis:', saveError);
+        }
+      }
+    });
 
     return NextResponse.json({ 
       success: true, 
       id: uploadedFilePair.id, 
-      message: 'Files uploaded successfully' 
+      message: 'Files uploaded successfully. Analysis started.' 
     });
   } catch (error) {
     console.error('Error handling upload:', error);

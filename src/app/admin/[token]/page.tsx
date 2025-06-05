@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { UserSession } from '@/types';
 import { 
   FiDatabase, 
@@ -16,7 +17,7 @@ import {
   FiPlus,
   FiFolder
 } from 'react-icons/fi';
-import { isValidAdminToken, ADMIN_TOKEN } from '@/lib/admin';
+import { isValidAdminToken } from '@/lib/admin';
 
 interface AdminStats {
   totalSessions: number;
@@ -69,7 +70,7 @@ export default function AdminTokenPage() {
       } else {
         setError('Ошибка загрузки данных');
       }
-    } catch (err) {
+    } catch {
       setError('Ошибка подключения к серверу');
     } finally {
       setLoading(false);
@@ -106,7 +107,7 @@ export default function AdminTokenPage() {
       } else {
         alert('Ошибка при удалении сессии');
       }
-    } catch (err) {
+    } catch {
       alert('Ошибка при удалении сессии');
     }
   };
@@ -177,12 +178,12 @@ export default function AdminTokenPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <h1 className="text-3xl font-bold text-gray-900">Админская панель</h1>
-              <a
+              <Link
                 href="/"
                 className="inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
               >
                 ← На главную
-              </a>
+              </Link>
             </div>
             <div className="flex items-center space-x-2">
                <a

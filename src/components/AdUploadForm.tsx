@@ -144,7 +144,6 @@ export default function AdUploadForm({ sessionId, onUploadComplete }: AdUploadFo
       return;
     }
 
-    // Upload each pair sequentially
     for (const pair of filePairs) {
       if (!pair.uploaded && !pair.uploading) {
         await uploadFilePair(pair);
@@ -153,28 +152,28 @@ export default function AdUploadForm({ sessionId, onUploadComplete }: AdUploadFo
   };
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col gap-2">
+    <div className="space-y-6 sm:space-y-8">
+      <div className="flex flex-col gap-4 sm:gap-6">
         {filePairs.map((pair, index) => (
           <div
             key={pair.id}
-            className="border rounded-lg p-6 mb-4 bg-white shadow-sm"
+            className="border rounded-lg p-4 sm:p-6 mb-4 bg-white shadow-sm"
           >
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-medium">Pair #{index + 1}</h3>
+              <h3 className="text-base sm:text-lg font-medium">Pair #{index + 1}</h3>
               {filePairs.length > 1 && (
                 <button
                   type="button"
                   onClick={() => removePair(pair.id)}
-                  className="text-red-600 hover:text-red-800"
+                  className="text-red-600 hover:text-red-800 p-2 touch-manipulation"
                   disabled={pair.uploading}
                 >
-                  <FiTrash2 className="h-5 w-5" />
+                  <FiTrash2 className="h-4 w-4 sm:h-5 sm:w-5" />
                 </button>
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <FileUpload
                 accept={{
                   'video/*': ['.mp4', '.webm', '.mov'],
@@ -196,7 +195,7 @@ export default function AdUploadForm({ sessionId, onUploadComplete }: AdUploadFo
             </div>
 
             {pair.error && (
-              <div className="mt-2 text-red-600 text-sm">{pair.error}</div>
+              <div className="mt-2 text-red-600 text-xs sm:text-sm bg-red-50 p-3 rounded">{pair.error}</div>
             )}
 
             {pair.uploading && (
@@ -209,9 +208,9 @@ export default function AdUploadForm({ sessionId, onUploadComplete }: AdUploadFo
             )}
 
             {pair.uploaded && (
-              <div className="mt-4 flex items-center text-green-600">
-                <FiCheck className="mr-2" />
-                <span>Successfully uploaded!</span>
+              <div className="mt-4 flex items-center text-green-600 bg-green-50 p-3 rounded">
+                <FiCheck className="mr-2 flex-shrink-0" />
+                <span className="text-xs sm:text-sm">Successfully uploaded!</span>
               </div>
             )}
 
@@ -220,10 +219,10 @@ export default function AdUploadForm({ sessionId, onUploadComplete }: AdUploadFo
                 <button
                   type="button"
                   onClick={() => uploadFilePair(pair)}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  className="inline-flex items-center px-4 py-3 border border-transparent text-xs sm:text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 min-h-[44px] touch-manipulation w-full sm:w-auto justify-center"
                   disabled={!pair.video || !pair.graph}
                 >
-                  <FiUpload className="mr-2" />
+                  <FiUpload className="mr-2 flex-shrink-0" />
                   Upload This Pair
                 </button>
               </div>
@@ -232,22 +231,22 @@ export default function AdUploadForm({ sessionId, onUploadComplete }: AdUploadFo
         ))}
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4">
+      <div className="flex flex-col space-y-3 sm:space-y-0 sm:flex-row sm:space-x-4">
         <button
           type="button"
           onClick={addNewPair}
-          className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          className="inline-flex items-center justify-center px-4 py-3 border border-gray-300 text-xs sm:text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 min-h-[44px] touch-manipulation"
         >
-          <FiPlus className="mr-2" />
+          <FiPlus className="mr-2 flex-shrink-0" />
           Add Another Pair
         </button>
 
         <button
           type="button"
           onClick={uploadAll}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+          className="inline-flex items-center justify-center px-4 py-3 border border-transparent text-xs sm:text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 min-h-[44px] touch-manipulation"
         >
-          <FiUpload className="mr-2" />
+          <FiUpload className="mr-2 flex-shrink-0" />
           Upload All Pairs
         </button>
       </div>

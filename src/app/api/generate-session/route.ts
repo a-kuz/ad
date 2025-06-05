@@ -4,7 +4,7 @@ import { generateSessionId, createSession } from '@/lib/database';
 export async function POST() {
   try {
     const sessionId = generateSessionId();
-    const session = createSession(sessionId);
+    const session = await createSession(sessionId);
     
     return NextResponse.json({ sessionId: session.sessionId });
   } catch (error) {

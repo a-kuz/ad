@@ -7,14 +7,7 @@ export async function DELETE(
 ) {
   try {
     const { sessionId } = await params;
-    const success = deleteSession(sessionId);
-    
-    if (!success) {
-      return NextResponse.json(
-        { error: 'Session not found' },
-        { status: 404 }
-      );
-    }
+    await deleteSession(sessionId);
     
     return NextResponse.json({ success: true });
   } catch (error) {

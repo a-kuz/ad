@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getAllSessions } from '@/lib/database';
-import { isValidAdminToken } from '@/lib/admin';
+import { UploadedFilePair } from '@/types';
 
-export async function GET(
-  request: Request
-) {
+export async function GET() {
   try {
     // Optional: add token validation here as well for extra security
     // const url = new URL(request.url);
@@ -13,9 +11,9 @@ export async function GET(
     //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     // }
 
-    const sessions = getAllSessions();
+    const sessions = await getAllSessions();
     
-    const allFiles = sessions.reduce((acc, session) => {
+    const allFiles = sessions.reduce((acc: (UploadedFilePair & { sessionId: string })[], session) => {
       session.filePairs.forEach(pair => {
         acc.push({ ...pair, sessionId: session.sessionId });
       });

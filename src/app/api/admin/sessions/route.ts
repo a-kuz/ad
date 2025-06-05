@@ -3,7 +3,7 @@ import { getAllSessions } from '@/lib/database';
 
 export async function GET() {
   try {
-    const sessions = getAllSessions();
+    const sessions = await getAllSessions();
     
     const stats = {
       totalSessions: sessions.length,

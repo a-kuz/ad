@@ -12,7 +12,7 @@ function getAdminTokens(): string[] {
     }
     const data = fs.readFileSync(ADMIN_TOKENS_FILE, 'utf8');
     return JSON.parse(data);
-  } catch (error) {
+  } catch {
     return [];
   }
 }
