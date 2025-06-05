@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import { useParams } from 'next/navigation';
 import { UserSession } from '@/types';
 import { 
   FiDatabase, 
@@ -11,8 +12,11 @@ import {
   FiRefreshCw,
   FiActivity,
   FiLink,
-  FiTrash2
+  FiTrash2,
+  FiPlus,
+  FiFolder
 } from 'react-icons/fi';
+import { isValidAdminToken, ADMIN_TOKEN } from '@/lib/admin';
 
 interface AdminStats {
   totalSessions: number;
@@ -25,11 +29,33 @@ interface AdminData {
   stats: AdminStats;
 }
 
-export default function AdminPage() {
+export default function AdminTokenPage() {
+  const params = useParams();
+  const token = params.token as string;
+  
   const [data, setData] = useState<AdminData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
+  const [isValidToken, setIsValidToken] = useState<boolean | null>(null);
+  const [generatedLinks, setGeneratedLinks] = useState<string[]>([]);
+  const [generatingLink, setGeneratingLink] = useState(false);
+
+  useEffect(() => {
+    if (!token) {
+        setIsValidToken(false);
+        setLoading(false);
+        return;
+    }
+    const valid = isValidAdminToken(token);
+    setIsValidToken(valid);
+
+    if (valid) {
+        fetchData();
+    } else {
+        setLoading(false);
+    }
+  }, [token]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -49,10 +75,6 @@ export default function AdminPage() {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
 
   const toggleSessionExpansion = (sessionId: string) => {
     const newExpanded = new Set(expandedSessions);
@@ -89,11 +111,44 @@ export default function AdminPage() {
     }
   };
 
-  if (loading) {
+  const generateNewLink = async () => {
+    setGeneratingLink(true);
+    try {
+      const response = await fetch('/api/generate-session', {
+        method: 'POST',
+      });
+      
+      if (response.ok) {
+        const { sessionId } = await response.json();
+        const newLink = `${window.location.origin}/upload/${sessionId}`;
+        setGeneratedLinks(prev => [...prev, newLink]);
+      } else {
+        alert('Ошибка при создании ссылки');
+      }
+    } catch (error) {
+      console.error('Failed to generate link:', error);
+      alert('Ошибка при создании ссылки');
+    } finally {
+      setGeneratingLink(false);
+    }
+  };
+
+  if (loading || isValidToken === null) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-8">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        <p className="mt-4 text-gray-600">Загрузка данных...</p>
+        <p className="mt-4 text-gray-600">Проверка токена и загрузка данных...</p>
+      </main>
+    );
+  }
+
+  if (!isValidToken) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center p-8">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-red-600 mb-4">Неверный токен администратора</h1>
+          <p className="text-gray-600">Пожалуйста, проверьте ссылку.</p>
+        </div>
       </main>
     );
   }
@@ -129,13 +184,21 @@ export default function AdminPage() {
                 ← На главную
               </a>
             </div>
-            <button
-              onClick={fetchData}
-              className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-            >
-              <FiRefreshCw className="mr-2" />
-              Обновить
-            </button>
+            <div className="flex items-center space-x-2">
+               <a
+                href={`/admin/${token}/all-files`}
+                className="inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+              >
+                <FiFolder className="mr-2"/> Все файлы
+              </a>
+              <button
+                onClick={fetchData}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+              >
+                <FiRefreshCw className="mr-2" />
+                Обновить
+              </button>
+            </div>
           </div>
           <p className="text-gray-600 mt-2">Управление сессиями и просмотр статистики</p>
         </div>
@@ -178,6 +241,49 @@ export default function AdminPage() {
                    </div>
                  </div>
                </div>
+            </div>
+
+            <div className="mb-8">
+              <button
+                onClick={generateNewLink}
+                disabled={generatingLink}
+                className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+              >
+                <FiPlus className="mr-2" />
+                {generatingLink ? 'Генерация...' : 'Создать новую ссылку для загрузки'}
+              </button>
+              
+              {generatedLinks.length > 0 && (
+                <div className="mt-4 bg-gray-100 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold mb-2">Созданные ссылки:</h3>
+                  <div className="space-y-2">
+                    {generatedLinks.map((link, index) => (
+                      <div key={index} className="flex items-center justify-between bg-white rounded-md p-3 shadow-sm">
+                         <div className="flex items-center flex-1">
+                            <FiLink className="mr-3 text-gray-500" />
+                            <span className="text-sm font-mono text-gray-700 truncate">{link}</span>
+                          </div>
+                          <div className="flex gap-2 ml-4">
+                            <button
+                              onClick={() => navigator.clipboard.writeText(link)}
+                              className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                            >
+                              Копировать
+                            </button>
+                            <a
+                              href={link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200"
+                            >
+                              Открыть
+                            </a>
+                          </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="bg-white rounded-lg shadow">
