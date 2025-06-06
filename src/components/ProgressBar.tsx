@@ -14,14 +14,14 @@ export default function ProgressBar({ progress, label }: ProgressBarProps) {
   return (
     <div className="w-full mb-4">
       {label && (
-        <div className="flex justify-between mb-2">
-          <span className="text-xs sm:text-sm font-medium text-gray-700">{label}</span>
-          <span className="text-xs sm:text-sm font-medium text-gray-700">{Math.round(clampedProgress)}%</span>
+        <div className="flex justify-between mb-3">
+          <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{label}</span>
+          <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{Math.round(clampedProgress)}%</span>
         </div>
       )}
-      <div className="w-full bg-gray-200 rounded-full h-3 sm:h-2.5">
+      <div className="w-full bg-gray-100 rounded-full h-2">
         <div 
-          className="bg-blue-600 h-3 sm:h-2.5 rounded-full transition-all duration-300 ease-in-out" 
+          className="h-full rounded-full transition-all duration-300 ease-in-out bg-primary" 
           style={{ width: `${clampedProgress}%` }}
         ></div>
       </div>

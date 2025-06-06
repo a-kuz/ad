@@ -10,9 +10,9 @@ import {
 } from '@/types';
 
 function getRetentionAtTime(dropoutCurve: DropoutCurveTable, timestamp: number): number {
-  const point = dropoutCurve.points.find(p => Math.abs(p.timestamp - timestamp) < 0.25);
-  if (point) {
-    return point.retentionPercentage;
+  const exactPoint = dropoutCurve.points.find(p => Math.abs(p.timestamp - timestamp) < 0.25);
+  if (exactPoint) {
+    return exactPoint.retentionPercentage;
   }
   
   const beforePoint = dropoutCurve.points
@@ -27,9 +27,14 @@ function getRetentionAtTime(dropoutCurve: DropoutCurveTable, timestamp: number):
   if (beforePoint && !afterPoint) return beforePoint.retentionPercentage;
   if (!beforePoint && !afterPoint) return 100;
 
-  const ratio = (timestamp - beforePoint.timestamp) / (afterPoint.timestamp - beforePoint.timestamp);
-  return beforePoint.retentionPercentage + 
+  const timeDiff = afterPoint.timestamp - beforePoint.timestamp;
+  if (timeDiff === 0) return beforePoint.retentionPercentage;
+  
+  const ratio = (timestamp - beforePoint.timestamp) / timeDiff;
+  const interpolatedValue = beforePoint.retentionPercentage + 
          ratio * (afterPoint.retentionPercentage - beforePoint.retentionPercentage);
+  
+  return Math.max(0, Math.min(100, interpolatedValue));
 }
 
 function analyzeBlockDropouts(blocks: ContentBlock[], dropoutCurve: DropoutCurveTable): BlockDropoutAnalysis[] {
@@ -37,18 +42,22 @@ function analyzeBlockDropouts(blocks: ContentBlock[], dropoutCurve: DropoutCurve
     const startRetention = getRetentionAtTime(dropoutCurve, block.startTime);
     const endRetention = getRetentionAtTime(dropoutCurve, block.endTime);
     const absoluteDropout = startRetention - endRetention;
-    // Относительный отвал = абсолютное падение в процентных пунктах
-    const relativeDropout = Math.max(0, absoluteDropout);
+    
+    const relativeDropout = startRetention > 0 ? Math.max(0, (absoluteDropout / startRetention) * 100) : 0;
+    
+    // Добавляем абсолютный процент отвала из кривой досмотра
+    const dropoutPercentage = 100 - endRetention;
 
     return {
       blockId: block.id,
       blockName: block.name,
       startTime: block.startTime,
       endTime: block.endTime,
-      startRetention,
-      endRetention,
-      absoluteDropout,
-      relativeDropout
+      startRetention: Math.round(startRetention * 100) / 100,
+      endRetention: Math.round(endRetention * 100) / 100,
+      absoluteDropout: Math.round(absoluteDropout * 100) / 100,
+      relativeDropout: Math.round(relativeDropout * 100) / 100,
+      dropoutPercentage: Math.round(dropoutPercentage * 100) / 100
     };
   });
 }

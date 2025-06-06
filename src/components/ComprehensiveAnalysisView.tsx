@@ -14,25 +14,27 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
   const [showAllPoints, setShowAllPoints] = useState(false);
 
   const formatTime = (seconds: number) => {
-    if (seconds < 60) {
-      return `${seconds.toFixed(1)}`;
-    }
     const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${remainingSeconds.toFixed(1).padStart(4, '0')}`;
+    const remainingSeconds = Math.floor(seconds % 60);
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
   const formatPercentage = (value: number) => `${value.toFixed(2)}%`;
 
   const getDropoutColor = (dropout: number) => {
-    if (dropout > 15) return 'text-red-700';
-    if (dropout > 5) return 'text-orange-700';
-    return 'text-green-700';
+    if (dropout > 80) return 'text-red-600';
+    if (dropout > 50) return 'text-orange-600';
+    return 'text-green-600';
   };
 
   const getDropoutIcon = (dropout: number) => {
-    if (dropout === 0) return '◆';
-    return '▼';
+    if (dropout > 80) return '🔴';
+    if (dropout > 50) return '🟡';
+    return '🟢';
+  };
+
+  const getDropoutPercentage = (block: BlockDropoutAnalysis) => {
+    return block.dropoutPercentage ?? (block.endRetention !== undefined ? 100 - block.endRetention : 0);
   };
 
   return (
@@ -104,8 +106,10 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
               </thead>
               <tbody>
                 {analysis.textualVisualAnalysis.groups.map((block: ContentBlock, index: number) => {
-                  const dropout = analysis.blockDropoutAnalysis.find(d => d.blockId === block.id);
-                  const relativeDropout = dropout?.relativeDropout || 0;
+                  const dropout = analysis.blockDropoutAnalysis.find(d => 
+                    d.blockId === block.id && d.blockName === block.name
+                  );
+                  const dropoutPercentage = dropout?.dropoutPercentage ?? (dropout?.endRetention !== undefined ? 100 - dropout.endRetention : 0);
                   return (
                     <tr key={block.id} className="border-b border-gray-600 hover:bg-gray-700">
                       <td className="py-3 px-4 text-gray-100 font-medium">{index + 1}</td>
@@ -119,9 +123,9 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
                       <td className="py-3 px-4 font-semibold text-gray-100">{dropout?.startRetention.toFixed(2) || 'N/A'}</td>
                       <td className="py-3 px-4 font-semibold text-gray-100">{dropout?.endRetention.toFixed(2) || 'N/A'}</td>
                       <td className="py-3 px-4">
-                        <span className={`font-semibold ${relativeDropout > 15 ? 'text-red-300' : relativeDropout > 5 ? 'text-yellow-300' : 'text-green-300'}`}>
-                          {relativeDropout > 0 ? `${getDropoutIcon(relativeDropout)} −${relativeDropout.toFixed(1)}%` : 
-                           relativeDropout === 0 ? `${getDropoutIcon(relativeDropout)} 0.0%` : 'N/A'}
+                        <span className={`font-semibold ${dropoutPercentage > 80 ? 'text-red-300' : dropoutPercentage > 50 ? 'text-yellow-300' : 'text-green-300'}`}>
+                          {dropoutPercentage > 0 ? `${getDropoutIcon(dropoutPercentage)} ${dropoutPercentage.toFixed(1)}%` : 
+                           dropoutPercentage === 0 ? `${getDropoutIcon(dropoutPercentage)} 0.0%` : 'N/A'}
                         </span>
                       </td>
                     </tr>
@@ -155,8 +159,10 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
               </thead>
               <tbody>
                 {analysis.visualAnalysis.groups.map((block: ContentBlock, index: number) => {
-                  const dropout = analysis.blockDropoutAnalysis.find(d => d.blockId === block.id);
-                  const relativeDropout = dropout?.relativeDropout || 0;
+                  const dropout = analysis.blockDropoutAnalysis.find(d => 
+                    d.blockId === block.id && d.blockName === block.name
+                  );
+                  const dropoutPercentage = dropout?.dropoutPercentage ?? (dropout?.endRetention !== undefined ? 100 - dropout.endRetention : 0);
                   return (
                     <tr key={block.id} className="border-b border-gray-600 hover:bg-gray-700">
                       <td className="py-4 px-4 font-semibold text-gray-100">{block.name}</td>
@@ -168,9 +174,9 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
                         </div>
                       </td>
                       <td className="py-4 px-4">
-                        <span className={`font-semibold ${relativeDropout > 15 ? 'text-red-300' : relativeDropout > 5 ? 'text-yellow-300' : 'text-green-300'}`}>
-                          {relativeDropout > 0 ? `${getDropoutIcon(relativeDropout)} −${relativeDropout.toFixed(1)}%` : 
-                           relativeDropout === 0 ? `${getDropoutIcon(relativeDropout)} 0.0%` : 'N/A'}
+                        <span className={`font-semibold ${dropoutPercentage > 80 ? 'text-red-300' : dropoutPercentage > 50 ? 'text-yellow-300' : 'text-green-300'}`}>
+                          {dropoutPercentage > 0 ? `${getDropoutIcon(dropoutPercentage)} ${dropoutPercentage.toFixed(1)}%` : 
+                           dropoutPercentage === 0 ? `${getDropoutIcon(dropoutPercentage)} 0.0%` : 'N/A'}
                         </span>
                       </td>
                     </tr>
@@ -193,7 +199,7 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
         <div className="space-y-4">
           {analysis.audioAnalysis.groups.map((block: ContentBlock) => {
             const blockAnalysis = analysis.blockDropoutAnalysis.find(
-              (ba: BlockDropoutAnalysis) => ba.blockId === block.id
+              (ba: BlockDropoutAnalysis) => ba.blockId === block.id && ba.blockName === block.name
             );
             return (
               <div key={block.id} className="border-2 border-gray-200 rounded-lg p-4 hover:bg-gray-50">
@@ -216,8 +222,8 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
                     </div>
                     <div>
                       <span className="font-semibold text-gray-800">Отвал %:</span><br/>
-                      <span className={`text-lg font-bold ${getDropoutColor(blockAnalysis.relativeDropout)}`}>
-                        {getDropoutIcon(blockAnalysis.relativeDropout)} −{blockAnalysis.relativeDropout.toFixed(1)}%
+                      <span className={`text-lg font-bold ${(blockAnalysis.dropoutPercentage ?? (blockAnalysis.endRetention !== undefined ? 100 - blockAnalysis.endRetention : 0)) > 80 ? 'text-red-700' : (blockAnalysis.dropoutPercentage ?? (blockAnalysis.endRetention !== undefined ? 100 - blockAnalysis.endRetention : 0)) > 50 ? 'text-orange-700' : 'text-green-700'}`}>
+                        {getDropoutIcon(blockAnalysis.dropoutPercentage ?? (blockAnalysis.endRetention !== undefined ? 100 - blockAnalysis.endRetention : 0))} {(blockAnalysis.dropoutPercentage ?? (blockAnalysis.endRetention !== undefined ? 100 - blockAnalysis.endRetention : 0)).toFixed(1)}%
                       </span>
                     </div>
                   </div>
@@ -234,61 +240,89 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
           <span className="w-3 h-3 bg-purple-500 rounded-full mr-2"></span>
           Сопоставление блоков по времени
         </h3>
-        <div className="overflow-x-auto">
-          <table className="min-w-full table-auto text-sm border border-gray-200 rounded-lg">
-            <thead>
-              <tr className="bg-gray-100">
-                <th className="px-3 py-3 text-left font-semibold text-gray-800">Тип блока</th>
-                <th className="px-3 py-3 text-left font-semibold text-gray-800">Название блока</th>
-                <th className="px-3 py-3 text-left font-semibold text-gray-800">Время (сек)</th>
-                <th className="px-3 py-3 text-left font-semibold text-gray-800">Содержание</th>
-                <th className="px-3 py-3 text-left font-semibold text-gray-800">Начало (%)</th>
-                <th className="px-3 py-3 text-left font-semibold text-gray-800">Конец (%)</th>
-                <th className="px-3 py-3 text-left font-semibold text-gray-800">Отвал %</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* Объединяем все блоки и сортируем по времени начала */}
-              {[
-                ...analysis.audioAnalysis.groups.map(block => ({ ...block, type: 'Аудио', color: 'bg-green-50' })),
-                ...analysis.textualVisualAnalysis.groups.map(block => ({ ...block, type: 'Текст', color: 'bg-blue-50' })),
-                ...analysis.visualAnalysis.groups.map(block => ({ ...block, type: 'Визуал', color: 'bg-purple-50' }))
-              ]
-                .sort((a, b) => a.startTime - b.startTime)
-                .map((block, index) => {
-                  const dropout = analysis.blockDropoutAnalysis.find(d => d.blockId === block.id);
-                  const relativeDropout = dropout?.relativeDropout || 0;
-                  return (
-                    <tr key={`${block.type}-${block.id}`} className={`${block.color} hover:opacity-80 border-b`}>
-                      <td className="px-3 py-3">
-                        <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                          block.type === 'Аудио' ? 'bg-green-200 text-green-800' :
-                          block.type === 'Текст' ? 'bg-blue-200 text-blue-800' :
-                          'bg-purple-200 text-purple-800'
-                        }`}>
+        <div className="space-y-4">
+          {[
+            ...analysis.audioAnalysis.groups.map(block => ({ ...block, type: 'Аудио', icon: '🎵', bgColor: 'bg-green-50', borderColor: 'border-green-200', tagColor: 'bg-green-100 text-green-800' })),
+            ...analysis.textualVisualAnalysis.groups.map(block => ({ ...block, type: 'Текст', icon: '📝', bgColor: 'bg-blue-50', borderColor: 'border-blue-200', tagColor: 'bg-blue-100 text-blue-800' })),
+            ...analysis.visualAnalysis.groups.map(block => ({ ...block, type: 'Визуал', icon: '🎬', bgColor: 'bg-purple-50', borderColor: 'border-purple-200', tagColor: 'bg-purple-100 text-purple-800' }))
+          ]
+            .sort((a, b) => a.startTime - b.startTime)
+            .map((block, index) => {
+              const dropout = analysis.blockDropoutAnalysis.find(d => 
+                d.blockId === block.id && d.blockName === block.name
+              );
+              const dropoutPercentage = dropout?.dropoutPercentage ?? (dropout?.endRetention !== undefined ? 100 - dropout.endRetention : 0);
+              const duration = block.endTime - block.startTime;
+              
+              return (
+                <div key={`${block.type}-${block.id}`} className={`${block.bgColor} ${block.borderColor} border-2 rounded-lg p-5 hover:shadow-md transition-shadow`}>
+                  {/* Заголовок блока */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center space-x-3">
+                      <span className="text-2xl">{block.icon}</span>
+                      <div>
+                        <h4 className="text-lg font-bold text-gray-900">{block.name}</h4>
+                        <span className={`inline-block px-3 py-1 rounded-full text-sm font-semibold ${block.tagColor}`}>
                           {block.type}
                         </span>
-                      </td>
-                      <td className="px-3 py-3 font-semibold text-gray-800">{block.name}</td>
-                      <td className="px-3 py-3 text-gray-800 font-medium">{block.startTime.toFixed(1)}–{block.endTime.toFixed(1)}</td>
-                      <td className="px-3 py-3 max-w-xs">
-                        <div className="break-words text-xs font-medium text-gray-700">
-                          {block.content || block.purpose}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-semibold text-gray-600">Время</div>
+                      <div className="text-lg font-bold text-gray-900">
+                        {formatTime(block.startTime)} - {formatTime(block.endTime)}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Длительность: {duration.toFixed(1)}с
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Содержание */}
+                  <div className="mb-4">
+                    <div className="text-sm font-semibold text-gray-700 mb-2">Содержание:</div>
+                    <div className="text-gray-800 leading-relaxed bg-white p-3 rounded border">
+                      {block.content || block.purpose || 'Содержание не определено'}
+                    </div>
+                  </div>
+
+                  {/* Метрики удержания */}
+                  {dropout && (
+                    <div className="grid grid-cols-3 gap-4 bg-white p-4 rounded-lg border">
+                      <div className="text-center">
+                        <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">
+                          Начальное удержание
                         </div>
-                      </td>
-                      <td className="px-3 py-3 font-semibold text-gray-800">{dropout?.startRetention.toFixed(1) || 'N/A'}</td>
-                      <td className="px-3 py-3 font-semibold text-gray-800">{dropout?.endRetention.toFixed(1) || 'N/A'}</td>
-                      <td className="px-3 py-3">
-                        <span className={`font-semibold ${relativeDropout > 15 ? 'text-red-700' : relativeDropout > 5 ? 'text-orange-700' : 'text-green-700'}`}>
-                          {relativeDropout > 0 ? `${getDropoutIcon(relativeDropout)} −${relativeDropout.toFixed(1)}%` : 
-                           relativeDropout === 0 ? `${getDropoutIcon(relativeDropout)} 0.0%` : 'N/A'}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-            </tbody>
-          </table>
+                        <div className="text-2xl font-bold text-blue-600">
+                          {dropout.startRetention.toFixed(1)}%
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">
+                          Конечное удержание
+                        </div>
+                        <div className="text-2xl font-bold text-blue-600">
+                          {dropout.endRetention.toFixed(1)}%
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">
+                          Отвал аудитории
+                        </div>
+                        <div className={`text-2xl font-bold ${dropoutPercentage > 80 ? 'text-red-600' : dropoutPercentage > 50 ? 'text-orange-600' : 'text-green-600'}`}>
+                          {getDropoutIcon(dropoutPercentage)} {dropoutPercentage.toFixed(1)}%
+                        </div>
+                        {dropoutPercentage > 80 && (
+                          <div className="text-xs text-red-600 font-semibold mt-1">
+                            ⚠️ Критический отвал
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
         </div>
       </div>
 
@@ -296,12 +330,12 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
       <div className="bg-red-50 border-l-4 border-red-600 rounded-lg shadow border p-6">
         <h3 className="text-xl font-semibold mb-4 text-red-900 flex items-center">
           <span className="mr-2">⚠️</span>
-          Критические блоки (отвал > 15%)
+          Критические блоки (отвал > 80%)
         </h3>
         <div className="space-y-3">
           {analysis.blockDropoutAnalysis
-            .filter((block: BlockDropoutAnalysis) => block.relativeDropout > 15)
-            .sort((a: BlockDropoutAnalysis, b: BlockDropoutAnalysis) => b.relativeDropout - a.relativeDropout)
+            .filter((block: BlockDropoutAnalysis) => getDropoutPercentage(block) > 80)
+            .sort((a: BlockDropoutAnalysis, b: BlockDropoutAnalysis) => getDropoutPercentage(b) - getDropoutPercentage(a))
             .map((block: BlockDropoutAnalysis) => (
               <div key={block.blockId} className="flex justify-between items-center p-3 bg-white rounded-lg shadow border">
                 <div>
@@ -312,13 +346,13 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
                 </div>
                 <div className="text-right">
                   <div className="text-red-700 font-bold text-lg">
-                    ▼ −{block.relativeDropout.toFixed(1)}%
+                    ▼ {getDropoutPercentage(block).toFixed(1)}%
                   </div>
                   <div className="text-xs text-gray-700 font-medium">отвал в %</div>
                 </div>
               </div>
             ))}
-                      {analysis.blockDropoutAnalysis.filter((block: BlockDropoutAnalysis) => block.relativeDropout > 15).length === 0 && (
+          {analysis.blockDropoutAnalysis.filter((block: BlockDropoutAnalysis) => getDropoutPercentage(block) > 80).length === 0 && (
             <div className="text-center py-4">
               <span className="text-green-700 font-semibold">✅ Нет критических блоков с высоким отвалом</span>
             </div>

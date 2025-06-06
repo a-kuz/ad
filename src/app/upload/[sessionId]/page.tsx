@@ -9,6 +9,7 @@ import { FiArrowLeft, FiAlertCircle, FiBarChart, FiCalendar, FiDatabase, FiCheck
 import Link from 'next/link';
 import MiniDropoutChart from '@/components/MiniDropoutChart';
 import { getDropoutDataFromAnalysis } from '@/lib/analysisUtils';
+import AnalysisLogs from '@/components/AnalysisLogs';
 
 export default function UploadPage() {
   const params = useParams();
@@ -166,7 +167,7 @@ export default function UploadPage() {
                 const analysisStatus = getAnalysisStatus(pair);
                 
                 return (
-                  <div key={pair.id} className="bg-white rounded-lg border shadow-sm hover:shadow-md transition-shadow">
+                  <div key={`${pair.id}-${index}`} className="bg-white rounded-lg border shadow-sm hover:shadow-md transition-shadow">
                     <div className="p-4">
                       {/* Header */}
                       <div className="flex items-start justify-between mb-3">
@@ -208,6 +209,16 @@ export default function UploadPage() {
                           ) : null;
                         })()}
                       </div>
+
+                      {/* Analysis Logs */}
+                      {analysisStatus.status === 'processing' && (
+                        <div className="mt-3">
+                          <AnalysisLogs 
+                            filePairId={pair.id} 
+                            isAnalyzing={analysisStatus.status === 'processing'} 
+                          />
+                        </div>
+                      )}
 
                       {/* Analysis Results */}
                       {analysisStatus.status === 'completed' && pair.analysis && (

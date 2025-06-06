@@ -2,7 +2,7 @@ import { ComprehensiveVideoAnalysis, DropoutCurveTable, AudioAnalysis, TextualVi
 import { v4 as uuidv4 } from 'uuid';
 
 export function generateTestAnalysis(duration: number = 30): ComprehensiveVideoAnalysis {
-  // Генерируем кривую отвалов
+  // Генерируем кривую отвалов с более реалистичной математикой
   const dropoutCurve: DropoutCurveTable = {
     points: [],
     step: 0.5,
@@ -10,11 +10,24 @@ export function generateTestAnalysis(duration: number = 30): ComprehensiveVideoA
   };
 
   for (let t = 0; t <= duration; t += 0.5) {
-    const retention = Math.max(10, 100 - (t * 1.5) - Math.random() * 10);
+    // Более реалистичная модель отвалов: экспоненциальное снижение с небольшими флуктуациями
+    let retention: number;
+    
+    if (t === 0) {
+      retention = 100; // Всегда начинаем со 100%
+    } else {
+      // Экспоненциальное снижение: более быстрое в начале, затем стабилизация
+      const baseRetention = 100 * Math.exp(-t * 0.08); // Экспоненциальная функция
+      const randomVariation = (Math.random() - 0.5) * 8; // Случайные колебания ±4%
+      retention = Math.max(5, baseRetention + randomVariation); // Минимум 5%
+    }
+    
+    const dropoutPercentage = 100 - retention;
+    
     dropoutCurve.points.push({
-      timestamp: t,
-      retentionPercentage: retention,
-      dropoutPercentage: 100 - retention
+      timestamp: Math.round(t * 100) / 100, // Округляем timestamp
+      retentionPercentage: Math.round(retention * 100) / 100,
+      dropoutPercentage: Math.round(dropoutPercentage * 100) / 100
     });
   }
 
@@ -151,21 +164,31 @@ export function generateTestAnalysis(duration: number = 30): ComprehensiveVideoA
   const blockDropoutAnalysis: BlockDropoutAnalysis[] = [];
   
   [...audioAnalysis.groups, ...textualVisualAnalysis.groups, ...visualAnalysis.groups].forEach(block => {
-    const startRetention = dropoutCurve.points.find(p => Math.abs(p.timestamp - block.startTime) < 0.3)?.retentionPercentage || 100;
-    const endRetention = dropoutCurve.points.find(p => Math.abs(p.timestamp - block.endTime) < 0.3)?.retentionPercentage || 90;
+    // Находим ближайшие точки для начала и конца блока
+    const startPoint = dropoutCurve.points.find(p => Math.abs(p.timestamp - block.startTime) < 0.3);
+    const endPoint = dropoutCurve.points.find(p => Math.abs(p.timestamp - block.endTime) < 0.3);
+    
+    const startRetention = startPoint ? startPoint.retentionPercentage : 
+      getRetentionAtTime(dropoutCurve, block.startTime);
+    const endRetention = endPoint ? endPoint.retentionPercentage : 
+      getRetentionAtTime(dropoutCurve, block.endTime);
+    
     const absoluteDropout = startRetention - endRetention;
-    // Относительный отвал = абсолютное падение в процентных пунктах
-    const relativeDropout = Math.max(0, absoluteDropout);
+    
+    // Относительный отвал - это процентное изменение относительно начального удержания
+    // Если начальное удержание 100%, а конечное 84%, то относительный отвал = (100-84)/100 * 100 = 16%
+    const relativeDropout = startRetention > 0 ? Math.max(0, (absoluteDropout / startRetention) * 100) : 0;
 
     blockDropoutAnalysis.push({
       blockId: block.id,
       blockName: block.name,
       startTime: block.startTime,
       endTime: block.endTime,
-      startRetention,
-      endRetention,
-      absoluteDropout,
-      relativeDropout
+      startRetention: Math.round(startRetention * 100) / 100,
+      endRetention: Math.round(endRetention * 100) / 100,
+      absoluteDropout: Math.round(absoluteDropout * 100) / 100,
+      relativeDropout: Math.round(relativeDropout * 100) / 100,
+      dropoutPercentage: Math.round((100 - endRetention) * 100) / 100
     });
   });
 
@@ -192,4 +215,37 @@ export function generateTestAnalysis(duration: number = 30): ComprehensiveVideoA
     blockDropoutAnalysis,
     timelineAlignment
   };
+}
+
+// Вспомогательная функция для интерполяции удержания
+function getRetentionAtTime(dropoutCurve: DropoutCurveTable, timestamp: number): number {
+  // Ищем точную точку с допуском 0.25 секунды
+  const exactPoint = dropoutCurve.points.find(p => Math.abs(p.timestamp - timestamp) < 0.25);
+  if (exactPoint) {
+    return exactPoint.retentionPercentage;
+  }
+  
+  // Находим точки до и после искомого времени
+  const beforePoint = dropoutCurve.points
+    .filter(p => p.timestamp <= timestamp)
+    .sort((a, b) => b.timestamp - a.timestamp)[0];
+  
+  const afterPoint = dropoutCurve.points
+    .filter(p => p.timestamp >= timestamp)
+    .sort((a, b) => a.timestamp - b.timestamp)[0];
+
+  // Обрабатываем граничные случаи
+  if (!beforePoint && afterPoint) return afterPoint.retentionPercentage;
+  if (beforePoint && !afterPoint) return beforePoint.retentionPercentage;
+  if (!beforePoint && !afterPoint) return 100;
+
+  // Линейная интерполяция между двумя точками
+  const timeDiff = afterPoint.timestamp - beforePoint.timestamp;
+  if (timeDiff === 0) return beforePoint.retentionPercentage;
+  
+  const ratio = (timestamp - beforePoint.timestamp) / timeDiff;
+  const interpolatedValue = beforePoint.retentionPercentage + 
+         ratio * (afterPoint.retentionPercentage - beforePoint.retentionPercentage);
+  
+  return Math.max(0, Math.min(100, interpolatedValue));
 } 

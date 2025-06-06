@@ -96,9 +96,22 @@ async function initializeSchema() {
       FOREIGN KEY (file_pair_id) REFERENCES file_pairs (id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS analysis_logs (
+      id TEXT PRIMARY KEY,
+      file_pair_id TEXT NOT NULL,
+      step TEXT NOT NULL,
+      message TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'running',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (file_pair_id) REFERENCES file_pairs (id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_file_pairs_session_id ON file_pairs (session_id);
     CREATE INDEX IF NOT EXISTS idx_video_analyses_file_pair_id ON video_analyses (file_pair_id);
     CREATE INDEX IF NOT EXISTS idx_comprehensive_analyses_file_pair_id ON comprehensive_analyses (file_pair_id);
+    CREATE INDEX IF NOT EXISTS idx_analysis_logs_file_pair_id ON analysis_logs (file_pair_id);
+    CREATE INDEX IF NOT EXISTS idx_analysis_logs_created_at ON analysis_logs (created_at);
   `);
 
   // Migration: Add generated_title column if it doesn't exist
@@ -376,4 +389,65 @@ export async function savePairTitle(filePairId: string, title: string): Promise<
   await database.run(`
     UPDATE file_pairs SET generated_title = ? WHERE id = ?
   `, [title, filePairId]);
+}
+
+export interface AnalysisLog {
+  id: string;
+  filePairId: string;
+  step: string;
+  message: string;
+  status: 'running' | 'completed' | 'error';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function createAnalysisLog(filePairId: string, step: string, message: string): Promise<string> {
+  const database = await getDatabase();
+  const id = uuidv4();
+  const now = new Date().toISOString();
+  
+  await database.run(
+    'INSERT INTO analysis_logs (id, file_pair_id, step, message, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [id, filePairId, step, message, 'running', now, now]
+  );
+  
+  return id;
+}
+
+export async function updateAnalysisLog(logId: string, message: string, status: 'running' | 'completed' | 'error'): Promise<void> {
+  const database = await getDatabase();
+  const now = new Date().toISOString();
+  
+  await database.run(
+    'UPDATE analysis_logs SET message = ?, status = ?, updated_at = ? WHERE id = ?',
+    [message, status, now, logId]
+  );
+}
+
+export async function getAnalysisLogs(filePairId: string): Promise<AnalysisLog[]> {
+  const database = await getDatabase();
+  
+  const rows = await database.all(
+    'SELECT * FROM analysis_logs WHERE file_pair_id = ? ORDER BY created_at ASC',
+    [filePairId]
+  );
+  
+  return rows.map((row: any) => ({
+    id: row.id,
+    filePairId: row.file_pair_id,
+    step: row.step,
+    message: row.message,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  }));
+}
+
+export async function clearAnalysisLogs(filePairId: string): Promise<void> {
+  const database = await getDatabase();
+  
+  await database.run(
+    'DELETE FROM analysis_logs WHERE file_pair_id = ?',
+    [filePairId]
+  );
 } 

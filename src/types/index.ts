@@ -149,6 +149,7 @@ export interface BlockDropoutAnalysis {
   endRetention: number;
   absoluteDropout: number;
   relativeDropout: number;
+  dropoutPercentage: number; // Абсолютный процент отвала на момент окончания блока
 }
 
 export interface ComprehensiveVideoAnalysis {
