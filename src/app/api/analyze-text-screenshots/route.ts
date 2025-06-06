@@ -77,11 +77,21 @@ export async function POST(request: NextRequest) {
     }
 
     const groupingPrompt = `
-    Analyze these text screenshots and group them into meaningful content blocks.
-    Each block should represent a distinct text section or UI element that appears on screen.
+    You are analyzing an advertising video to study audience retention over the timeline. Analyze these text screenshots and group them into small, fine-grained content blocks.
+    IMPORTANT: Create short blocks of 1-3 seconds duration, don't combine different moments into long blocks.
+    
+    CONTEXT: This is analysis of an advertising video to understand how text elements affect viewer retention at specific moments in time.
     
     Text Analysis:
     ${textAnalysis.map(t => `[${t.timestamp}s] ${t.text || '(no text)'}`).join('\n')}
+    
+    Grouping rules:
+    - Each block should be maximum 1-3 seconds long
+    - Don't combine texts that appear with large time gaps
+    - Create separate blocks for each unique text element
+    - If text repeats over time, create new blocks for each occurrence
+    - Focus on micro-moments and specific text appearances
+    - Consider advertising specifics: headlines, call-to-actions, product names, pricing
     
     Return a JSON array of content blocks with this structure:
     [

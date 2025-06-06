@@ -337,17 +337,28 @@ async function groupTextualContent(textAnalysis: Array<{timestamp: number, text:
       return [];
     }
 
-    const groupingPrompt = `Сгруппируй текстовые элементы в блоки по смыслу.
+    const groupingPrompt = `Ты анализируешь рекламный ролик для изучения удержания аудитории по таймлайну. Сгруппируй текстовые элементы в смысловые блоки.
+
+КОНТЕКСТ: Это анализ рекламного видео для понимания того, как текстовые элементы влияют на удержание зрителей в конкретные моменты времени.
 
 Данные:
 ${textWithTimestamps}
+
+Правила группировки:
+- ПЕРВЫЕ ТРИ БЛОКА должны быть длительностью 1-3 секунды каждый (для детального анализа начала)
+- Остальные блоки могут быть длиннее (3-10 секунд), объединяя логически связанные тексты
+- Блоки НЕ ДОЛЖНЫ ПЕРЕСЕКАТЬСЯ - каждый следующий блок начинается после окончания предыдущего
+- Названия должны отражать суть текста: "Заголовок", "Цена", "Призыв", "Логотип", "Описание" и т.д.
+- Создавай отдельные блоки для разных типов текстовых элементов
+- Если текст повторяется через время, создавай новые блоки
+- Учитывай рекламную специфику: заголовки, призывы к действию, продуктовые названия
 
 Верни JSON:
 {
   "blocks": [
     {
-      "id": "block_1",
-      "name": "Краткое название",
+      "id": "text_block_1",
+      "name": "Осмысленное название",
       "startTime": время_начала,
       "endTime": время_окончания,
       "type": "text",
@@ -432,7 +443,7 @@ ${textWithTimestamps}
       return fallbackGroups;
     }
     
-    return groupsData.map((group: any) => ({
+    let textBlocks = groupsData.map((group: any) => ({
       id: group.id || uuidv4(),
       name: group.name || 'Текстовый блок',
       startTime: group.startTime || 0,
@@ -441,6 +452,9 @@ ${textWithTimestamps}
       content: group.content || '',
       purpose: group.purpose || ''
     }));
+
+    // Исправляем пересечения блоков
+    return fixBlockOverlaps(textBlocks);
 
   } catch (error) {
     console.error('Error grouping textual content:', error);
@@ -458,17 +472,27 @@ async function groupVisualContent(visualAnalysis: Array<{timestamp: number, desc
       .map(v => `[${v.timestamp.toFixed(1)}s] ${v.description} | Действия: ${v.actions.join(', ')} | Элементы: ${v.elements.join(', ')}`)
       .join('\n');
 
-    const groupingPrompt = `Сгруппируй визуальный контент в блоки по сценам.
+    const groupingPrompt = `Ты анализируешь рекламный ролик для изучения удержания аудитории по таймлайну. Сгруппируй визуальный контент в смысловые блоки по сценам.
+
+КОНТЕКСТ: Это анализ рекламного видео для понимания того, как визуальные элементы и сцены влияют на удержание зрителей в конкретные моменты времени.
 
 Данные:
 ${visualData}
+
+Правила группировки:
+- ПЕРВЫЕ ТРИ БЛОКА должны быть длительностью 1-3 секунды каждый (для детального анализа начала)
+- Остальные блоки могут быть длиннее (3-10 секунд), объединяя логически связанные сцены
+- Блоки НЕ ДОЛЖНЫ ПЕРЕСЕКАТЬСЯ - каждый следующий блок начинается после окончания предыдущего
+- Названия должны отражать суть сцены: "Демонстрация продукта", "Лицо актера", "Переход", "Финальный кадр" и т.д.
+- Создавай отдельные блоки для разных сцен, действий или визуальных фокусов
+- Учитывай рекламную специфику: демонстрация продукта, лица людей, переходы между сценами
 
 Верни JSON:
 {
   "blocks": [
     {
-      "id": "block_1",
-      "name": "Краткое название",
+      "id": "visual_block_1",
+      "name": "Осмысленное название сцены",
       "startTime": время_начала,
       "endTime": время_окончания,
       "type": "visual",
@@ -556,7 +580,7 @@ ${visualData}
       return timeGroups;
     }
     
-    return groupsData.map((group: any) => ({
+    let visualBlocks = groupsData.map((group: any) => ({
       id: group.id || uuidv4(),
       name: group.name || 'Визуальный блок',
       startTime: group.startTime || 0,
@@ -565,6 +589,9 @@ ${visualData}
       content: group.content || '',
       purpose: group.purpose || ''
     }));
+
+    // Исправляем пересечения блоков
+    return fixBlockOverlaps(visualBlocks);
 
   } catch (error) {
     console.error('Error grouping visual content:', error);

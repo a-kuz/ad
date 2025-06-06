@@ -22,19 +22,19 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
   const formatPercentage = (value: number) => `${value.toFixed(2)}%`;
 
   const getDropoutColor = (dropout: number) => {
-    if (dropout > 80) return 'text-red-600';
-    if (dropout > 50) return 'text-orange-600';
+    if (dropout > 30) return 'text-red-600';
+    if (dropout > 15) return 'text-orange-600';
     return 'text-green-600';
   };
 
   const getDropoutIcon = (dropout: number) => {
-    if (dropout > 80) return '🔴';
-    if (dropout > 50) return '🟡';
+    if (dropout > 30) return '🔴';
+    if (dropout > 15) return '🟡';
     return '🟢';
   };
 
   const getDropoutPercentage = (block: BlockDropoutAnalysis) => {
-    return block.dropoutPercentage ?? (block.endRetention !== undefined ? 100 - block.endRetention : 0);
+    return block.relativeDropout ?? 0;
   };
 
   return (
@@ -109,7 +109,7 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
                   const dropout = analysis.blockDropoutAnalysis.find(d => 
                     d.blockId === block.id && d.blockName === block.name
                   );
-                  const dropoutPercentage = dropout?.dropoutPercentage ?? (dropout?.endRetention !== undefined ? 100 - dropout.endRetention : 0);
+                  const dropoutPercentage = dropout?.relativeDropout ?? 0;
                   return (
                     <tr key={block.id} className="border-b border-gray-600 hover:bg-gray-700">
                       <td className="py-3 px-4 text-gray-100 font-medium">{index + 1}</td>
@@ -123,7 +123,7 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
                       <td className="py-3 px-4 font-semibold text-gray-100">{dropout?.startRetention.toFixed(2) || 'N/A'}</td>
                       <td className="py-3 px-4 font-semibold text-gray-100">{dropout?.endRetention.toFixed(2) || 'N/A'}</td>
                       <td className="py-3 px-4">
-                        <span className={`font-semibold ${dropoutPercentage > 80 ? 'text-red-300' : dropoutPercentage > 50 ? 'text-yellow-300' : 'text-green-300'}`}>
+                        <span className={`font-semibold ${dropoutPercentage > 30 ? 'text-red-300' : dropoutPercentage > 15 ? 'text-yellow-300' : 'text-green-300'}`}>
                           {dropoutPercentage > 0 ? `${getDropoutIcon(dropoutPercentage)} ${dropoutPercentage.toFixed(1)}%` : 
                            dropoutPercentage === 0 ? `${getDropoutIcon(dropoutPercentage)} 0.0%` : 'N/A'}
                         </span>
@@ -162,7 +162,7 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
                   const dropout = analysis.blockDropoutAnalysis.find(d => 
                     d.blockId === block.id && d.blockName === block.name
                   );
-                  const dropoutPercentage = dropout?.dropoutPercentage ?? (dropout?.endRetention !== undefined ? 100 - dropout.endRetention : 0);
+                  const dropoutPercentage = dropout?.relativeDropout ?? 0;
                   return (
                     <tr key={block.id} className="border-b border-gray-600 hover:bg-gray-700">
                       <td className="py-4 px-4 font-semibold text-gray-100">{block.name}</td>
@@ -174,7 +174,7 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
                         </div>
                       </td>
                       <td className="py-4 px-4">
-                        <span className={`font-semibold ${dropoutPercentage > 80 ? 'text-red-300' : dropoutPercentage > 50 ? 'text-yellow-300' : 'text-green-300'}`}>
+                        <span className={`font-semibold ${dropoutPercentage > 30 ? 'text-red-300' : dropoutPercentage > 15 ? 'text-yellow-300' : 'text-green-300'}`}>
                           {dropoutPercentage > 0 ? `${getDropoutIcon(dropoutPercentage)} ${dropoutPercentage.toFixed(1)}%` : 
                            dropoutPercentage === 0 ? `${getDropoutIcon(dropoutPercentage)} 0.0%` : 'N/A'}
                         </span>
@@ -222,8 +222,8 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
                     </div>
                     <div>
                       <span className="font-semibold text-gray-800">Отвал %:</span><br/>
-                      <span className={`text-lg font-bold ${(blockAnalysis.dropoutPercentage ?? (blockAnalysis.endRetention !== undefined ? 100 - blockAnalysis.endRetention : 0)) > 80 ? 'text-red-700' : (blockAnalysis.dropoutPercentage ?? (blockAnalysis.endRetention !== undefined ? 100 - blockAnalysis.endRetention : 0)) > 50 ? 'text-orange-700' : 'text-green-700'}`}>
-                        {getDropoutIcon(blockAnalysis.dropoutPercentage ?? (blockAnalysis.endRetention !== undefined ? 100 - blockAnalysis.endRetention : 0))} {(blockAnalysis.dropoutPercentage ?? (blockAnalysis.endRetention !== undefined ? 100 - blockAnalysis.endRetention : 0)).toFixed(1)}%
+                      <span className={`text-lg font-bold ${(blockAnalysis.relativeDropout ?? 0) > 30 ? 'text-red-700' : (blockAnalysis.relativeDropout ?? 0) > 15 ? 'text-orange-700' : 'text-green-700'}`}>
+                        {getDropoutIcon(blockAnalysis.relativeDropout ?? 0)} {(blockAnalysis.relativeDropout ?? 0).toFixed(1)}%
                       </span>
                     </div>
                   </div>
@@ -251,7 +251,7 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
               const dropout = analysis.blockDropoutAnalysis.find(d => 
                 d.blockId === block.id && d.blockName === block.name
               );
-              const dropoutPercentage = dropout?.dropoutPercentage ?? (dropout?.endRetention !== undefined ? 100 - dropout.endRetention : 0);
+              const dropoutPercentage = dropout?.relativeDropout ?? 0;
               const duration = block.endTime - block.startTime;
               
               return (
@@ -309,10 +309,10 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
                         <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">
                           Отвал аудитории
                         </div>
-                        <div className={`text-2xl font-bold ${dropoutPercentage > 80 ? 'text-red-600' : dropoutPercentage > 50 ? 'text-orange-600' : 'text-green-600'}`}>
+                        <div className={`text-2xl font-bold ${dropoutPercentage > 30 ? 'text-red-600' : dropoutPercentage > 15 ? 'text-orange-600' : 'text-green-600'}`}>
                           {getDropoutIcon(dropoutPercentage)} {dropoutPercentage.toFixed(1)}%
                         </div>
-                        {dropoutPercentage > 80 && (
+                        {dropoutPercentage > 30 && (
                           <div className="text-xs text-red-600 font-semibold mt-1">
                             ⚠️ Критический отвал
                           </div>
@@ -330,11 +330,11 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
       <div className="bg-red-50 border-l-4 border-red-600 rounded-lg shadow border p-6">
         <h3 className="text-xl font-semibold mb-4 text-red-900 flex items-center">
           <span className="mr-2">⚠️</span>
-          Критические блоки (отвал > 80%)
+          Критические блоки (отвал > 30%)
         </h3>
         <div className="space-y-3">
           {analysis.blockDropoutAnalysis
-            .filter((block: BlockDropoutAnalysis) => getDropoutPercentage(block) > 80)
+            .filter((block: BlockDropoutAnalysis) => getDropoutPercentage(block) > 30)
             .sort((a: BlockDropoutAnalysis, b: BlockDropoutAnalysis) => getDropoutPercentage(b) - getDropoutPercentage(a))
             .map((block: BlockDropoutAnalysis) => (
               <div key={block.blockId} className="flex justify-between items-center p-3 bg-white rounded-lg shadow border">
@@ -352,7 +352,7 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
                 </div>
               </div>
             ))}
-          {analysis.blockDropoutAnalysis.filter((block: BlockDropoutAnalysis) => getDropoutPercentage(block) > 80).length === 0 && (
+                      {analysis.blockDropoutAnalysis.filter((block: BlockDropoutAnalysis) => getDropoutPercentage(block) > 30).length === 0 && (
             <div className="text-center py-4">
               <span className="text-green-700 font-semibold">✅ Нет критических блоков с высоким отвалом</span>
             </div>

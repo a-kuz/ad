@@ -109,11 +109,21 @@ export async function POST(request: NextRequest) {
     }
 
     const groupingPrompt = `
-    Analyze these visual descriptions and group them into meaningful content blocks.
-    Each block should represent a distinct visual scene, action sequence, or creative element.
+    You are analyzing an advertising video to study audience retention over the timeline. Analyze these visual descriptions and group them into small, fine-grained content blocks.
+    IMPORTANT: Create short blocks of 1-3 seconds duration, don't combine different scenes into long blocks.
+    
+    CONTEXT: This is analysis of an advertising video to understand how visual elements and scenes affect viewer retention at specific moments in time.
     
     Visual Analysis:
     ${visualAnalysis.map(v => `[${v.timestamp}s] ${v.description} | Actions: ${v.actions.join(', ')} | Elements: ${v.elements.join(', ')}`).join('\n')}
+    
+    Grouping rules:
+    - Each block should be maximum 1-3 seconds long
+    - Create separate blocks for each scene change or action
+    - Don't combine different visual elements into one long block
+    - Focus on micro-scenes and specific moments
+    - If actions or elements change, create new blocks
+    - Consider advertising specifics: product demonstrations, people's faces, scene transitions, brand elements
     
     Return a JSON array of content blocks with this structure:
     [

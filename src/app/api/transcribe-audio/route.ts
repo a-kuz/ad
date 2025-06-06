@@ -36,11 +36,21 @@ export async function POST(request: NextRequest) {
     })) || [];
 
     const groupingPrompt = `
-    Analyze this audio transcription and group it into meaningful content blocks. 
-    Each block should represent a distinct topic, section, or creative element.
+    You are analyzing audio from an advertising video to study audience retention over the timeline. Analyze this audio transcription and group it into small, fine-grained content blocks. 
+    IMPORTANT: Create short blocks of 1-3 seconds duration, don't combine different phrases into long blocks.
+    
+    CONTEXT: This is analysis of an advertising video to understand how speech and audio affect viewer retention at specific moments in time.
     
     Transcription:
     ${transcriptionWithTimestamps.map(t => `[${t.timestamp}s] ${t.text}`).join('\n')}
+    
+    Grouping rules:
+    - Each block should be maximum 1-3 seconds long
+    - Create separate blocks for each phrase or sentence
+    - Don't combine different thoughts into one long block
+    - Focus on short speech segments
+    - If there are pauses between words, create separate blocks
+    - Consider advertising specifics: call-to-actions, product mentions, emotional appeals
     
     Return a JSON array of content blocks with this structure:
     [

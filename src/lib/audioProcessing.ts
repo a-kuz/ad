@@ -9,7 +9,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-export async function extractAudioFromVideo(videoPath: string, sessionId: string): Promise<string> {
+export async function extractAudioFromVideo(videoPath: string, sessionId: string, logger?: any): Promise<string> {
   return new Promise((resolve, reject) => {
     console.log('=== AUDIO EXTRACTION START ===');
     console.log('Input video path:', videoPath);
@@ -45,6 +45,9 @@ export async function extractAudioFromVideo(videoPath: string, sessionId: string
 
     command.on('progress', (progress) => {
       console.log('Audio extraction progress:', progress.percent + '% done');
+      if (logger && progress.percent) {
+        logger.updateProgress(progress.percent, `Извлечение аудио: ${Math.round(progress.percent)}%`);
+      }
     });
 
     command.on('stderr', (stderrLine) => {
@@ -72,12 +75,16 @@ export async function extractAudioFromVideo(videoPath: string, sessionId: string
   });
 }
 
-export async function transcribeAudioFile(audioPath: string): Promise<AudioAnalysis> {
+export async function transcribeAudioFile(audioPath: string, logger?: any): Promise<AudioAnalysis> {
   try {
     console.log('Transcribing audio file:', audioPath);
     
     if (!fs.existsSync(audioPath)) {
       throw new Error(`Audio file not found: ${audioPath}`);
+    }
+
+    if (logger) {
+      await logger.updateStep('Начало транскрипции аудио...', { progress: 10 });
     }
 
     const audioFile = fs.createReadStream(audioPath);
@@ -88,6 +95,10 @@ export async function transcribeAudioFile(audioPath: string): Promise<AudioAnaly
       response_format: "verbose_json",
       timestamp_granularities: ["segment"]
     });
+
+    if (logger) {
+      await logger.updateStep('Транскрипция завершена, обработка сегментов...', { progress: 60 });
+    }
 
     console.log('Transcription completed, processing segments...');
 
@@ -115,19 +126,40 @@ export async function transcribeAudioFile(audioPath: string): Promise<AudioAnaly
       }
     }
 
+    if (logger) {
+      await logger.updateStep('Группировка аудио в смысловые блоки...', { progress: 80 });
+    }
+
     // Группируем транскрипцию в смысловые блоки
-    const groups = await groupAudioContent(transcriptionWithTimestamps);
+    const groups = await groupAudioContent(transcriptionWithTimestamps, logger);
 
     const audioAnalysis: AudioAnalysis = {
       transcription: transcriptionWithTimestamps,
       groups
     };
 
+    if (logger) {
+      await logger.completeStep(`Аудио анализ завершен. Найдено ${groups.length} блоков`, {
+        audioBlocks: groups.map(g => ({
+          id: g.id,
+          name: g.name,
+          startTime: g.startTime,
+          endTime: g.endTime,
+          content: g.content,
+          purpose: g.purpose
+        }))
+      });
+    }
+
     console.log(`Audio analysis completed with ${groups.length} content blocks`);
     return audioAnalysis;
 
   } catch (error) {
     console.error('Error transcribing audio:', error);
+    
+    if (logger) {
+      await logger.errorStep(`Ошибка транскрипции: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`);
+    }
     
     // Возвращаем пустой анализ в случае ошибки
     return {
@@ -137,7 +169,7 @@ export async function transcribeAudioFile(audioPath: string): Promise<AudioAnaly
   }
 }
 
-async function groupAudioContent(transcription: Array<{timestamp: number, text: string, confidence: number}>): Promise<ContentBlock[]> {
+async function groupAudioContent(transcription: Array<{timestamp: number, text: string, confidence: number}>, logger?: any): Promise<ContentBlock[]> {
   try {
     if (transcription.length === 0) {
       return [];
@@ -154,17 +186,26 @@ async function groupAudioContent(transcription: Array<{timestamp: number, text: 
     }
 
     const groupingPrompt = `
-    Проанализируй эту аудио транскрипцию и сгруппируй её в смысловые блоки контента. 
-    Каждый блок должен представлять отдельную тему, раздел или креативный элемент.
+    Ты анализируешь аудио из рекламного ролика для изучения удержания аудитории по таймлайну. Проанализируй эту аудио транскрипцию и сгруппируй её в смысловые блоки контента.
+    
+    КОНТЕКСТ: Это анализ рекламного видео для понимания того, как речь и звуки влияют на удержание зрителей в конкретные моменты времени.
     
     Транскрипция:
     ${fullText}
     
+    Правила группировки:
+    - ПЕРВЫЕ ТРИ БЛОКА должны быть длительностью 1-3 секунды каждый (для детального анализа начала)
+    - Остальные блоки могут быть длиннее (3-10 секунд), группируя логически связанные фразы
+    - Блоки НЕ ДОЛЖНЫ ПЕРЕСЕКАТЬСЯ - каждый следующий блок начинается после окончания предыдущего
+    - Названия должны отражать суть содержания: "Открытие", "Призыв к действию", "Описание продукта", "Эмоциональный крючок" и т.д.
+    - Создавай отдельные блоки для разных тем или смысловых частей
+    - Учитывай рекламную специфику: призывы к действию, названия продуктов, эмоциональные акценты
+    
     Верни JSON массив блоков контента в следующем формате:
     [
       {
-        "id": "уникальный_id",
-        "name": "Название блока",
+        "id": "audio_block_1",
+        "name": "Осмысленное название блока",
         "startTime": время_начала_в_секундах,
         "endTime": время_окончания_в_секундах,
         "type": "audio",
@@ -173,8 +214,12 @@ async function groupAudioContent(transcription: Array<{timestamp: number, text: 
       }
     ]
     
-    Убедись, что блоки не пересекаются и покрывают всю длительность.
+    КРИТИЧЕСКИ ВАЖНО: блоки должны идти последовательно без пересечений (endTime одного = startTime следующего).
     `;
+
+    if (logger) {
+      await logger.updateStep('Запрос к ИИ для группировки аудио...', { progress: 85 });
+    }
 
     const groupingResponse = await openai.chat.completions.create({
       model: "gpt-4.1-mini",
@@ -197,7 +242,7 @@ async function groupAudioContent(transcription: Array<{timestamp: number, text: 
         throw new Error('Response is not an array');
       }
 
-      return groupsData.map((group: any) => ({
+      let audioBlocks = groupsData.map((group: any) => ({
         id: group.id || uuidv4(),
         name: group.name || 'Unnamed Block',
         startTime: group.startTime || 0,
@@ -206,6 +251,30 @@ async function groupAudioContent(transcription: Array<{timestamp: number, text: 
         content: group.content || '',
         purpose: group.purpose || ''
       }));
+
+      // Исправляем пересечения блоков
+      audioBlocks = fixBlockOverlaps(audioBlocks);
+
+      if (logger) {
+        // Логируем каждый найденный блок
+        for (const block of audioBlocks) {
+          await logger.updateCurrentBlock(`${block.name} (${block.startTime.toFixed(1)}s - ${block.endTime.toFixed(1)}s)`);
+        }
+        
+        await logger.updateStep(`Создано ${audioBlocks.length} аудио блоков`, {
+          audioBlocks: audioBlocks.map(b => ({
+            id: b.id,
+            name: b.name,
+            startTime: b.startTime,
+            endTime: b.endTime,
+            content: b.content,
+            purpose: b.purpose
+          })),
+          progress: 95
+        });
+      }
+
+      return audioBlocks;
 
     } catch (parseError) {
       console.error('Failed to parse audio grouping response:', parseError);
@@ -247,4 +316,31 @@ function createSimpleAudioGroups(transcription: Array<{timestamp: number, text: 
   }
   
   return groups;
-} 
+}
+
+function fixBlockOverlaps(blocks: ContentBlock[]): ContentBlock[] {
+  if (blocks.length === 0) return blocks;
+
+  // Сортируем блоки по времени начала
+  const sortedBlocks = [...blocks].sort((a, b) => a.startTime - b.startTime);
+  
+  for (let i = 1; i < sortedBlocks.length; i++) {
+    const prevBlock = sortedBlocks[i - 1];
+    const currentBlock = sortedBlocks[i];
+    
+    // Если блоки пересекаются
+    if (currentBlock.startTime < prevBlock.endTime) {
+      // Завершаем предыдущий блок в момент начала текущего
+      prevBlock.endTime = currentBlock.startTime;
+      
+      // Если предыдущий блок стал слишком коротким (меньше 0.5 сек), корректируем
+      if (prevBlock.endTime - prevBlock.startTime < 0.5) {
+        prevBlock.endTime = prevBlock.startTime + 0.5;
+        // И сдвигаем текущий блок
+        currentBlock.startTime = prevBlock.endTime;
+      }
+    }
+  }
+  
+  return sortedBlocks;
+}

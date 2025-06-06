@@ -10,6 +10,7 @@ import Link from 'next/link';
 import MiniDropoutChart from '@/components/MiniDropoutChart';
 import { getDropoutDataFromAnalysis } from '@/lib/analysisUtils';
 import AnalysisLogs from '@/components/AnalysisLogs';
+import RealTimeProgressDisplay from '@/components/RealTimeProgressDisplay';
 
 export default function UploadPage() {
   const params = useParams();
@@ -210,13 +211,25 @@ export default function UploadPage() {
                         })()}
                       </div>
 
-                      {/* Analysis Logs */}
+                      {/* Analysis Progress */}
                       {analysisStatus.status === 'processing' && (
-                        <div className="mt-3">
-                          <AnalysisLogs 
+                        <div className="mt-3 space-y-4">
+                          <RealTimeProgressDisplay 
                             filePairId={pair.id} 
                             isAnalyzing={analysisStatus.status === 'processing'} 
                           />
+                          <details className="group">
+                            <summary className="cursor-pointer text-sm text-gray-600 hover:text-gray-800 select-none">
+                              <span className="group-open:hidden">▶ Показать детальные логи</span>
+                              <span className="hidden group-open:inline">▼ Скрыть детальные логи</span>
+                            </summary>
+                            <div className="mt-2">
+                              <AnalysisLogs 
+                                filePairId={pair.id} 
+                                isAnalyzing={analysisStatus.status === 'processing'} 
+                              />
+                            </div>
+                          </details>
                         </div>
                       )}
 

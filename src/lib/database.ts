@@ -102,6 +102,7 @@ async function initializeSchema() {
       step TEXT NOT NULL,
       message TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'running',
+      details TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (file_pair_id) REFERENCES file_pairs (id) ON DELETE CASCADE
@@ -117,6 +118,16 @@ async function initializeSchema() {
   // Migration: Add generated_title column if it doesn't exist
   try {
     await db.exec(`ALTER TABLE file_pairs ADD COLUMN generated_title TEXT;`);
+  } catch (error: any) {
+    // Column already exists or other error - ignore if it's a "duplicate column" error
+    if (!error.message.includes('duplicate column name')) {
+      console.warn('Migration warning:', error.message);
+    }
+  }
+
+  // Migration: Add details column to analysis_logs if it doesn't exist
+  try {
+    await db.exec(`ALTER TABLE analysis_logs ADD COLUMN details TEXT;`);
   } catch (error: any) {
     // Column already exists or other error - ignore if it's a "duplicate column" error
     if (!error.message.includes('duplicate column name')) {
@@ -399,28 +410,43 @@ export interface AnalysisLog {
   status: 'running' | 'completed' | 'error';
   createdAt: string;
   updatedAt: string;
+  details?: {
+    progress?: number;
+    audioBlocks?: Array<{
+      id: string;
+      name: string;
+      startTime: number;
+      endTime: number;
+      content: string;
+      purpose: string;
+    }>;
+    screenshots?: number;
+    textBlocks?: number;
+    visualBlocks?: number;
+    currentBlock?: string;
+  };
 }
 
-export async function createAnalysisLog(filePairId: string, step: string, message: string): Promise<string> {
+export async function createAnalysisLog(filePairId: string, step: string, message: string, details?: AnalysisLog['details']): Promise<string> {
   const database = await getDatabase();
   const id = uuidv4();
   const now = new Date().toISOString();
   
   await database.run(
-    'INSERT INTO analysis_logs (id, file_pair_id, step, message, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [id, filePairId, step, message, 'running', now, now]
+    'INSERT INTO analysis_logs (id, file_pair_id, step, message, status, details, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, filePairId, step, message, 'running', details ? JSON.stringify(details) : null, now, now]
   );
   
   return id;
 }
 
-export async function updateAnalysisLog(logId: string, message: string, status: 'running' | 'completed' | 'error'): Promise<void> {
+export async function updateAnalysisLog(logId: string, message: string, status: 'running' | 'completed' | 'error', details?: AnalysisLog['details']): Promise<void> {
   const database = await getDatabase();
   const now = new Date().toISOString();
   
   await database.run(
-    'UPDATE analysis_logs SET message = ?, status = ?, updated_at = ? WHERE id = ?',
-    [message, status, now, logId]
+    'UPDATE analysis_logs SET message = ?, status = ?, details = ?, updated_at = ? WHERE id = ?',
+    [message, status, details ? JSON.stringify(details) : null, now, logId]
   );
 }
 
@@ -439,7 +465,8 @@ export async function getAnalysisLogs(filePairId: string): Promise<AnalysisLog[]
     message: row.message,
     status: row.status,
     createdAt: row.created_at,
-    updatedAt: row.updated_at
+    updatedAt: row.updated_at,
+    details: row.details ? JSON.parse(row.details) : undefined
   }));
 }
 

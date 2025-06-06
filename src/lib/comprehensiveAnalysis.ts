@@ -85,34 +85,46 @@ export async function performComprehensiveAnalysis(
     await logger.completeStep(`Найдено ${dropoutCurve.points.length} точек на кривой досмотра`);
     
     // 2. Извлечение и анализ аудио
-    await logger.startStep('AUDIO', 'Извлечение и транскрипция аудио');
+    await logger.startStep('AUDIO_EXTRACTION', 'Извлечение аудио из видео');
     console.log('Step 2: Processing audio...');
-    const audioPath = await extractAudioFromVideo(absoluteVideoPath, sessionId);
-    await logger.updateStep('Аудио извлечено, выполняется транскрипция...');
-    const audioAnalysis = await transcribeAudioFile(audioPath);
-    await logger.completeStep(`Найдено ${audioAnalysis.groups.length} аудио блоков`);
+    const audioPath = await extractAudioFromVideo(absoluteVideoPath, sessionId, logger);
+    await logger.completeStep('Аудио извлечено успешно');
+    
+    // 2a. Транскрипция аудио
+    await logger.startStep('AUDIO_TRANSCRIPTION', 'Транскрипция и анализ аудио');
+    const audioAnalysis = await transcribeAudioFile(audioPath, logger);
+    // Завершение шага происходит внутри transcribeAudioFile
     
     // 3. Извлечение скриншотов
     await logger.startStep('SCREENSHOTS', 'Извлечение скриншотов из видео');
     console.log('Step 3: Extracting screenshots...');
     const screenshots = await extractScreenshots(absoluteVideoPath, sessionId, videoMetadata.duration);
-    await logger.completeStep(`Извлечено ${screenshots.length} скриншотов`);
+    await logger.completeStep(`Извлечено ${screenshots.length} скриншотов`, { 
+      screenshots: screenshots.length 
+    });
     
     // 4. Анализ текста на скриншотах
     await logger.startStep('TEXT_ANALYSIS', 'Анализ текста на скриншотах');
     console.log('Step 4: Analyzing text in screenshots...');
+    await logger.updateStep('Обработка скриншотов для поиска текста...', { progress: 20 });
     const textualVisualAnalysis = await analyzeTextInScreenshots(screenshots, 0.5);
-    await logger.completeStep(`Найдено ${textualVisualAnalysis.groups.length} текстовых блоков`);
+    await logger.completeStep(`Найдено ${textualVisualAnalysis.groups.length} текстовых блоков`, {
+      textBlocks: textualVisualAnalysis.groups.length
+    });
     
     // 5. Визуальный анализ скриншотов
     await logger.startStep('VISUAL_ANALYSIS', 'Анализ визуального контента');
     console.log('Step 5: Analyzing visual content...');
+    await logger.updateStep('Анализ визуальных элементов...', { progress: 30 });
     const visualAnalysis = await analyzeVisualContent(screenshots, 0.5);
-    await logger.completeStep(`Найдено ${visualAnalysis.groups.length} визуальных блоков`);
+    await logger.completeStep(`Найдено ${visualAnalysis.groups.length} визуальных блоков`, {
+      visualBlocks: visualAnalysis.groups.length
+    });
     
     // 6. Сопоставление блоков с отвалами
     await logger.startStep('BLOCK_DROPOUT', 'Анализ отвалов по блокам');
     console.log('Step 6: Analyzing block dropouts...');
+    await logger.updateStep('Сопоставление блоков с кривой досмотра...', { progress: 40 });
     const blockDropoutAnalysis = analyzeBlockDropouts(
       [...audioAnalysis.groups, ...textualVisualAnalysis.groups, ...visualAnalysis.groups],
       dropoutCurve
@@ -122,6 +134,7 @@ export async function performComprehensiveAnalysis(
     // 7. Создание временной шкалы
     await logger.startStep('TIMELINE', 'Создание временной шкалы');
     console.log('Step 7: Creating timeline alignment...');
+    await logger.updateStep('Выравнивание блоков по временной шкале...', { progress: 60 });
     const timelineAlignment = createTimelineAlignment(
       audioAnalysis.groups,
       textualVisualAnalysis.groups,
@@ -133,8 +146,11 @@ export async function performComprehensiveAnalysis(
     // 8. Улучшение описаний блоков через GPT
     await logger.startStep('IMPROVE_DESCRIPTIONS', 'Улучшение описаний блоков');
     console.log('Step 8: Improving block descriptions...');
+    await logger.updateStep('Улучшение описаний аудио блоков...', { progress: 20 });
     const improvedAudioAnalysis = await improveBlockDescriptions(audioAnalysis);
+    await logger.updateStep('Улучшение описаний текстовых блоков...', { progress: 60 });
     const improvedTextualVisualAnalysis = await improveBlockDescriptions(textualVisualAnalysis);
+    await logger.updateStep('Улучшение описаний визуальных блоков...', { progress: 80 });
     const improvedVisualAnalysis = await improveBlockDescriptions(visualAnalysis);
     await logger.completeStep('Описания блоков улучшены');
     
@@ -162,8 +178,31 @@ export async function performComprehensiveAnalysis(
     console.log(`Validation status: ${validationResult.isValid ? 'PASSED' : 'WARNINGS'}`);
     console.log('=== COMPREHENSIVE ANALYSIS END ===');
     
-    await logger.completeStep('Анализ успешно завершен');
-    await logger.logStandalone('COMPLETED', `Комплексный анализ завершен. Найдено блоков: ${blockDropoutAnalysis.length}`);
+    await logger.completeStep('Анализ успешно завершен', {
+      audioBlocks: improvedAudioAnalysis.groups.map(g => ({
+        id: g.id,
+        name: g.name,
+        startTime: g.startTime,
+        endTime: g.endTime,
+        content: g.content,
+        purpose: g.purpose
+      })),
+      textBlocks: improvedTextualVisualAnalysis.groups.length,
+      visualBlocks: improvedVisualAnalysis.groups.length,
+      screenshots: screenshots.length
+    });
+    await logger.logStandalone('COMPLETED', `Комплексный анализ завершен. Найдено блоков: ${blockDropoutAnalysis.length}`, 'completed', {
+      audioBlocks: improvedAudioAnalysis.groups.map(g => ({
+        id: g.id,
+        name: g.name,
+        startTime: g.startTime,
+        endTime: g.endTime,
+        content: g.content,
+        purpose: g.purpose
+      })),
+      textBlocks: improvedTextualVisualAnalysis.groups.length,
+      visualBlocks: improvedVisualAnalysis.groups.length
+    });
     
     return result;
     
