@@ -102,14 +102,34 @@ export interface DropoutCurveTable {
   totalDuration: number;
 }
 
+export interface DropoutPoint {
+  time: number;      // Time in seconds
+  count: number;     // Number of viewers who dropped out at this time
+  viewersBefore: number; // Number of viewers before the dropout
+  viewersAfter: number;  // Number of viewers after the dropout
+}
+
+export interface DropoutCurve {
+  initialViewers: number;   // Initial number of viewers
+  dropouts: DropoutPoint[]; // Array of dropout points
+  totalDuration: number;    // Total duration of the video in seconds
+}
+
 export interface ContentBlock {
   id: string;
   name: string;
   startTime: number;
   endTime: number;
   type: 'audio' | 'text' | 'visual';
-  content?: string;
-  purpose?: string;
+  content: string;
+  purpose: string;
+  dropoutPercentage?: number;
+  dropoutCount?: number;
+  dropoutAnalysis?: {
+    analysis: string;
+    suggestions: string[];
+    isExpectedDropout: boolean;
+  };
 }
 
 export interface AudioAnalysis {
@@ -138,6 +158,8 @@ export interface VisualAnalysis {
     elements: string[];
   }>;
   groups: ContentBlock[];
+  prompt?: string;
+  model?: string;
 }
 
 export interface BlockDropoutAnalysis {
@@ -153,15 +175,10 @@ export interface BlockDropoutAnalysis {
 }
 
 export interface ComprehensiveVideoAnalysis {
-  dropoutCurve: DropoutCurveTable;
-  audioAnalysis: AudioAnalysis;
-  textualVisualAnalysis: TextualVisualAnalysis;
-  visualAnalysis: VisualAnalysis;
-  blockDropoutAnalysis: BlockDropoutAnalysis[];
-  timelineAlignment: {
-    timestamp: number;
-    audioBlock?: string;
-    textBlock?: string;
-    visualBlock?: string;
-  }[];
+  dropoutCurve?: DropoutCurve | DropoutCurveTable;
+  audioAnalysis?: AudioAnalysis;
+  textualVisualAnalysis?: TextualVisualAnalysis;
+  visualAnalysis?: VisualAnalysis;
+  contentBlocks?: ContentBlock[];
+  blockDropoutAnalysis?: BlockDropoutAnalysis[];
 } 

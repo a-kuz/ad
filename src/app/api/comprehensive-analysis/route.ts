@@ -1,145 +1,172 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ComprehensiveVideoAnalysis } from '@/types';
+import { analyzeVisualScreenshots } from '@/lib/visualAnalysis';
+import { analyzeBlockDropouts } from '@/lib/blockDropoutAnalysis';
+import { 
+  VideoMetadata, 
+  ComprehensiveVideoAnalysis,
+  DropoutCurve,
+  DropoutPoint,
+  AudioAnalysis,
+  TextualVisualAnalysis,
+  VisualAnalysis
+} from '@/types';
+import path from 'path';
+import fs from 'fs';
+import OpenAI from 'openai';
+import { v4 as uuidv4 } from 'uuid';
+import { saveComprehensiveAnalysis } from '@/lib/database';
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 export async function POST(request: NextRequest) {
   try {
-    const { sessionId, filePairId, videoPath, graphPath } = await request.json();
+    console.log("Starting comprehensive analysis");
     
-    if (!sessionId || !filePairId || !videoPath || !graphPath) {
+    const { 
+      sessionId, 
+      filePairId, 
+      videoPath, 
+      graphPath, 
+      videoMetadata,
+      dropoutCurveData
+    } = await request.json();
+    
+    if (!sessionId || !filePairId || !videoPath || !videoMetadata) {
       return NextResponse.json({ 
-        error: 'Session ID, file pair ID, video path, and graph path are required' 
+        error: 'Session ID, file pair ID, video path, and video metadata are required' 
       }, { status: 400 });
     }
-
-    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
-
-    console.log('Starting comprehensive analysis...');
-
-    console.log('Analyzing dropout curve...');
-    const fs = require('fs');
-    const imageBuffer = fs.readFileSync(graphPath);
-    const formData = new FormData();
-    const imageBlob = new Blob([imageBuffer], { type: 'image/jpeg' });
-    formData.append('image', imageBlob, 'graph.jpg');
     
-    const dropoutCurveResponse = await fetch(`${baseUrl}/api/analyze-dropout-curve`, {
-      method: 'POST',
-      body: formData
-    });
-
-    console.log('Getting video info...');
-    const videoInfoResponse = await fetch(`${baseUrl}/api/video-info/${sessionId}/${filePairId}`);
-
-    if (!dropoutCurveResponse.ok) {
-      throw new Error('Failed to analyze dropout curve');
+    console.log(`Processing comprehensive analysis for session ${sessionId}, file pair ${filePairId}`);
+    
+    // Check if the video file exists
+    const absoluteVideoPath = path.join(process.cwd(), 'public', videoPath);
+    if (!fs.existsSync(absoluteVideoPath)) {
+      return NextResponse.json({ error: `Video file not found at ${absoluteVideoPath}` }, { status: 404 });
     }
-
-    const dropoutCurve = await dropoutCurveResponse.json();
-    const videoInfo = await videoInfoResponse.json();
-    const duration = videoInfo.videoMetadata?.duration || 60;
-
-    console.log('Extracting audio...');
-    const audioResponse = await fetch(`${baseUrl}/api/extract-audio`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ videoPath, sessionId })
-    });
-
-    if (!audioResponse.ok) {
-      throw new Error('Failed to extract audio');
+    
+    // Check if the graph file exists, if provided
+    let absoluteGraphPath;
+    if (graphPath) {
+      absoluteGraphPath = path.join(process.cwd(), 'public', graphPath);
+      if (!fs.existsSync(absoluteGraphPath)) {
+        return NextResponse.json({ error: `Graph file not found at ${absoluteGraphPath}` }, { status: 404 });
+      }
+    } else {
+      console.log("No graph path provided, skipping dropout curve analysis");
     }
-
-    const audioData = await audioResponse.json();
-
-    console.log('Extracting screenshots...');
-    const screenshotsResponse = await fetch(`${baseUrl}/api/extract-screenshots`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ videoPath, sessionId, duration })
-    });
-
-    if (!screenshotsResponse.ok) {
-      throw new Error('Failed to extract screenshots');
+    
+    // Convert the provided dropout curve data if available
+    let dropoutCurve: DropoutCurve;
+    
+    if (dropoutCurveData) {
+      console.log("Using provided dropout curve data");
+      
+      // Convert the data to the DropoutCurve format
+      const dropouts: DropoutPoint[] = [];
+      let viewersRemaining = dropoutCurveData.initialViewers || 100;
+      
+      for (const point of dropoutCurveData.points) {
+        const viewersBefore = viewersRemaining;
+        const dropoutCount = Math.round((point.dropoutPercentage / 100) * viewersBefore);
+        viewersRemaining -= dropoutCount;
+        
+        dropouts.push({
+          time: point.timestamp,
+          count: dropoutCount,
+          viewersBefore: viewersBefore,
+          viewersAfter: viewersRemaining
+        });
+      }
+      
+      dropoutCurve = {
+        initialViewers: dropoutCurveData.initialViewers || 100,
+        dropouts,
+        totalDuration: videoMetadata.duration
+      };
+    } else {
+      console.log("No dropout curve data provided, creating a placeholder");
+      // Create a placeholder dropout curve if none provided
+      dropoutCurve = {
+        initialViewers: 100,
+        dropouts: [],
+        totalDuration: videoMetadata.duration
+      };
     }
-
-    const screenshotsData = await screenshotsResponse.json();
-
-    console.log('Analyzing audio transcription...');
-    const transcriptionResponse = await fetch(`${baseUrl}/api/transcribe-audio`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ audioPath: audioData.audioPath })
-    });
-
-    if (!transcriptionResponse.ok) {
-      throw new Error('Failed to transcribe audio');
+    
+    // Generate screenshots for visual analysis
+    console.log("Generating screenshots for visual analysis");
+    const screenshotsDir = `${Date.now()}`;
+    const screenshotsPath = path.join(process.cwd(), 'public', 'uploads', sessionId, 'screenshots', screenshotsDir);
+    
+    // Create the screenshots directory if it doesn't exist
+    if (!fs.existsSync(screenshotsPath)) {
+      fs.mkdirSync(screenshotsPath, { recursive: true });
     }
-
-    const audioAnalysis = await transcriptionResponse.json();
-
-    console.log('Analyzing text screenshots...');
-    const textAnalysisResponse = await fetch(`${baseUrl}/api/analyze-text-screenshots`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        screenshots: screenshotsData.screenshots,
-        step: screenshotsData.step
-      })
-    });
-
-    if (!textAnalysisResponse.ok) {
-      throw new Error('Failed to analyze text screenshots');
+    
+    // Determine step for taking screenshots (1 screenshot every 0.5s by default)
+    const step = 0.5;
+    
+    console.log(`Taking screenshots with step ${step}s`);
+    const ffmpegCmd = `ffmpeg -i ${absoluteVideoPath} -vf fps=1/${step} ${path.join(screenshotsPath, 'screenshot_%04.1fs.jpg')}`;
+    
+    const util = await import('util');
+    const exec = util.promisify((await import('child_process')).exec);
+    
+    try {
+      await exec(ffmpegCmd);
+      console.log("Screenshots generated successfully");
+    } catch (error) {
+      console.error("Error generating screenshots:", error);
+      return NextResponse.json({ 
+        error: 'Failed to generate screenshots', 
+        details: error instanceof Error ? error.message : String(error)
+      }, { status: 500 });
     }
-
-    const textualVisualAnalysis = await textAnalysisResponse.json();
-
-    console.log('Analyzing visual screenshots...');
-    const visualAnalysisResponse = await fetch(`${baseUrl}/api/analyze-visual-screenshots`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        screenshots: screenshotsData.screenshots,
-        step: screenshotsData.step
-      })
+    
+    // Analyze visual screenshots
+    console.log("Starting visual analysis");
+    const visualAnalysis = await analyzeVisualScreenshots({
+      screenshotsDir,
+      sessionId,
+      step
     });
-
-    if (!visualAnalysisResponse.ok) {
-      throw new Error('Failed to analyze visual screenshots');
-    }
-
-    const visualAnalysis = await visualAnalysisResponse.json();
-
-    console.log('Analyzing block dropouts...');
-    const blockDropoutsResponse = await fetch(`${baseUrl}/api/analyze-block-dropouts`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        dropoutCurve,
-        audioAnalysis,
-        textualVisualAnalysis,
-        visualAnalysis
-      })
+    
+    console.log("Visual analysis completed");
+    
+    // Create a placeholder for audio analysis
+    const audioAnalysis: AudioAnalysis = {
+      transcription: [],
+      groups: []
+    };
+    
+    // Generate block dropout analysis
+    console.log("Starting block dropout analysis");
+    const analysis = await analyzeBlockDropouts({
+      dropoutCurve,
+      audioAnalysis,
+      visualAnalysis
     });
-
-    if (!blockDropoutsResponse.ok) {
-      throw new Error('Failed to analyze block dropouts');
-    }
-
-    const comprehensiveAnalysis: ComprehensiveVideoAnalysis = await blockDropoutsResponse.json();
-
-    console.log('Comprehensive analysis completed successfully');
-
+    
+    console.log("Block dropout analysis completed");
+    
+    // Save the comprehensive analysis to the database
+    await saveComprehensiveAnalysis(filePairId, analysis);
+    
+    console.log("Comprehensive analysis saved to database");
+    
     return NextResponse.json({
       success: true,
-      analysis: comprehensiveAnalysis,
-      message: 'Comprehensive analysis completed successfully'
+      analysis
     });
-
+    
   } catch (error) {
-    console.error('Error in comprehensive analysis:', error);
+    console.error("Error in comprehensive analysis:", error);
     return NextResponse.json({ 
-      error: 'Failed to complete comprehensive analysis',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      error: 'Failed to perform comprehensive analysis', 
+      details: error instanceof Error ? error.message : String(error)
     }, { status: 500 });
   }
 } 

@@ -8,6 +8,53 @@ import Link from 'next/link';
 import Image from 'next/image';
 import ComprehensiveAnalysisView from '@/components/ComprehensiveAnalysisView';
 
+// Форматирование времени (секунды -> MM:SS)
+const formatTime = (seconds: number): string => {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+};
+
+// Расчет среднего процента досмотра
+const calculateAverageRetention = (dropoutCurve: any): number => {
+  if (!dropoutCurve) {
+    return 0;
+  }
+  
+  // Handle both structures: points (DropoutCurvePoint[]) and dropouts (DropoutPoint[])
+  if (dropoutCurve.points && dropoutCurve.points.length > 0) {
+    // DropoutCurveTable structure with points
+    let sum = 0;
+    for (const point of dropoutCurve.points) {
+      sum += point.retentionPercentage || 0;
+    }
+    return sum / dropoutCurve.points.length;
+  } else if (dropoutCurve.dropouts && dropoutCurve.dropouts.length > 0 && dropoutCurve.initialViewers > 0) {
+    // DropoutCurve structure with dropouts
+    let sum = 0;
+    for (const dropout of dropoutCurve.dropouts) {
+      sum += (dropout.viewersAfter / dropoutCurve.initialViewers) * 100;
+    }
+    return sum / dropoutCurve.dropouts.length;
+  }
+  
+  return 0;
+};
+
+// Получение точек для графика из кривой досмотра
+const getPointsFromDropoutCurve = (dropoutCurve: any): { x: number, y: number }[] => {
+  if (!dropoutCurve || !dropoutCurve.points || dropoutCurve.points.length === 0) {
+    return [];
+  }
+  
+  const initialViewers = dropoutCurve.initialViewers || 0;
+  
+  return dropoutCurve.points.map((point: any) => ({
+    x: point.timestamp,
+    y: (point.viewers / initialViewers) * 100
+  }));
+};
+
 export default function AnalysisPage() {
   const params = useParams();
   const sessionId = params.sessionId as string;
@@ -32,15 +79,37 @@ export default function AnalysisPage() {
           if (pair) {
             setFilePair(pair);
             
-            // Попытаемся загрузить комплексный анализ из поля report
-            if (pair.analysis?.report) {
-              try {
-                const parsedReport = JSON.parse(pair.analysis.report);
-                if (parsedReport.dropoutCurve && parsedReport.audioAnalysis) {
-                  setComprehensiveAnalysis(parsedReport);
+            // Попытаемся загрузить комплексный анализ из API
+            try {
+              const comprehensiveResponse = await fetch(`/api/comprehensive-analysis/${filePairId}`);
+              if (comprehensiveResponse.ok) {
+                const comprehensiveData = await comprehensiveResponse.json();
+                setComprehensiveAnalysis(comprehensiveData.analysis);
+              } else {
+                // Fallback: попытаемся загрузить из поля report
+                if (pair.analysis?.report) {
+                  try {
+                    const parsedReport = JSON.parse(pair.analysis.report);
+                    if (parsedReport.dropoutCurve && parsedReport.audioAnalysis) {
+                      setComprehensiveAnalysis(parsedReport);
+                    }
+                  } catch (parseError) {
+                    console.log('Не удалось загрузить комплексный анализ из report:', parseError);
+                  }
                 }
-              } catch (parseError) {
-                console.log('Не удалось загрузить комплексный анализ:', parseError);
+              }
+            } catch (comprehensiveError) {
+              console.log('Ошибка загрузки комплексного анализа:', comprehensiveError);
+              // Fallback: попытаемся загрузить из поля report
+              if (pair.analysis?.report) {
+                try {
+                  const parsedReport = JSON.parse(pair.analysis.report);
+                  if (parsedReport.dropoutCurve && parsedReport.audioAnalysis) {
+                    setComprehensiveAnalysis(parsedReport);
+                  }
+                } catch (parseError) {
+                  console.log('Не удалось загрузить комплексный анализ из report:', parseError);
+                }
               }
             }
           } else {
@@ -138,40 +207,60 @@ export default function AnalysisPage() {
             </div>
           </div>
 
-          {comprehensiveAnalysis ? (
-            <div className="space-y-6 sm:space-y-8">
-              <ComprehensiveAnalysisView analysis={comprehensiveAnalysis} />
-
-              <div className="bg-white rounded-xl p-4 sm:p-6 shadow-lg">
-                <h2 className="text-lg sm:text-xl font-bold text-slate-800 mb-4">Исходные файлы</h2>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-                  <div>
-                    <h3 className="font-medium text-slate-600 mb-3 text-sm sm:text-base">Видео</h3>
-                    <video 
-                      controls 
-                      className="w-full rounded-lg"
-                      src={filePair.videoPath}
-                      playsInline
-                    >
-                      Ваш браузер не поддерживает воспроизведение видео.
-                    </video>
+          {comprehensiveAnalysis && (
+            <div className="w-full">
+              {/* Информация о видео */}
+              <div className="mb-8">
+                <h2 className="text-2xl font-bold mb-4 text-gray-800">Информация о видео</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-white rounded-lg shadow p-6">
+                    <h3 className="text-lg font-semibold mb-4">Метаданные</h3>
+                    <div className="space-y-2">
+                      <p><span className="font-medium">Длительность:</span> {formatTime(filePair.videoMetadata?.duration || 0)}</p>
+                      <p><span className="font-medium">Разрешение:</span> {filePair.videoMetadata?.width || 0}x{filePair.videoMetadata?.height || 0}</p>
+                      <p><span className="font-medium">FPS:</span> {filePair.videoMetadata?.fps || 0}</p>
+                    </div>
                   </div>
-                  <div>
-                    <div className="relative">
-                      <Image 
-                        src={filePair.graphPath} 
-                        alt="График досмотров"
-                        width={500}
-                        height={300}
-                        className="w-full rounded-lg border border-slate-200"
-                        style={{ objectFit: 'contain' }}
-                      />
+                  <div className="bg-white rounded-lg shadow p-6">
+                    <h3 className="text-lg font-semibold mb-4">Досмотры</h3>
+                    <div className="space-y-2">
+                      <p><span className="font-medium">Начальное количество зрителей:</span> {comprehensiveAnalysis?.dropoutCurve?.initialViewers || 0}</p>
+                      <p><span className="font-medium">Точек выпадения:</span> {comprehensiveAnalysis?.dropoutCurve?.dropouts?.length || comprehensiveAnalysis?.dropoutCurve?.points?.length || 0}</p>
+                      <p><span className="font-medium">Средний процент досмотра:</span> {calculateAverageRetention(comprehensiveAnalysis?.dropoutCurve)?.toFixed(1) || '0.0'}%</p>
                     </div>
                   </div>
                 </div>
               </div>
+
+              {/* Кривая досмотра */}
+              <div className="mb-8">
+                <h2 className="text-2xl font-bold mb-4 text-gray-800">Кривая досмотра</h2>
+                <div className="bg-white rounded-lg shadow p-6">
+                  {(comprehensiveAnalysis?.dropoutCurve?.points || comprehensiveAnalysis?.dropoutCurve?.dropouts) ? (
+                    <div>
+                      {/* Временный элемент вместо графика */}
+                      <div className="border border-gray-300 rounded p-4 bg-gray-100 text-center">
+                        <p className="mb-2 font-medium">График кривой досмотра</p>
+                        <p className="text-sm text-gray-600">(Компонент графика в разработке)</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-center p-4">Нет данных для отображения кривой досмотра</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Компонент с полным анализом */}
+              <ComprehensiveAnalysisView 
+                analysis={comprehensiveAnalysis} 
+                sessionId={sessionId} 
+                filePairId={filePairId} 
+              />
             </div>
-          ) : (
+          )}
+
+          {/* Если анализ еще не загружен, показываем исходную версию интерфейса */}
+          {!comprehensiveAnalysis && (
             <div className="space-y-6 sm:space-y-8">
               <div className="bg-white rounded-xl p-4 sm:p-6 shadow-lg">
                 <div className="text-center">

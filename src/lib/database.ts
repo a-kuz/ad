@@ -1,5 +1,5 @@
 import sqlite3 from 'sqlite3';
-import { Database, open } from 'sqlite';
+import { Database } from 'sqlite';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { 
@@ -7,144 +7,23 @@ import {
   UploadedFilePair, 
   VideoAnalysis, 
   VideoMetadata,
-  ComprehensiveVideoAnalysis
+  ComprehensiveVideoAnalysis,
+  VisualAnalysis
 } from '@/types';
+import fs from 'fs';
+import { connectToDatabase } from './connectToDatabase';
 
-const DB_PATH = path.join(process.cwd(), 'data', 'app.db');
-
-let db: Database | null = null;
-
-async function getDatabase(): Promise<Database> {
-  if (db) {
-    return db;
-  }
-
-  const dbDir = path.dirname(DB_PATH);
-  const fs = await import('fs');
-  if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
-  }
-
-  db = await open({
-    filename: DB_PATH,
-    driver: sqlite3.Database
-  });
-
-  await initializeSchema();
-  return db;
-}
-
-async function initializeSchema() {
-  if (!db) return;
-
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      id TEXT PRIMARY KEY,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS file_pairs (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      video_path TEXT NOT NULL,
-      graph_path TEXT NOT NULL,
-      video_name TEXT NOT NULL,
-      graph_name TEXT NOT NULL,
-      uploaded_at TEXT NOT NULL,
-      generated_title TEXT,
-      FOREIGN KEY (session_id) REFERENCES sessions (id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS video_metadata (
-      file_pair_id TEXT PRIMARY KEY,
-      duration REAL NOT NULL,
-      width INTEGER NOT NULL,
-      height INTEGER NOT NULL,
-      fps REAL NOT NULL,
-      bitrate INTEGER NOT NULL,
-      format TEXT NOT NULL,
-      size INTEGER NOT NULL,
-      title TEXT,
-      thumbnail_path TEXT,
-      streams TEXT,
-      FOREIGN KEY (file_pair_id) REFERENCES file_pairs (id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS video_analyses (
-      id TEXT PRIMARY KEY,
-      file_pair_id TEXT NOT NULL,
-      insights TEXT NOT NULL,
-      recommendations TEXT NOT NULL,
-      critical_moments TEXT NOT NULL,
-      overall_score INTEGER NOT NULL,
-      improvement_areas TEXT NOT NULL,
-      generated_at TEXT NOT NULL,
-      report TEXT,
-      FOREIGN KEY (file_pair_id) REFERENCES file_pairs (id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS comprehensive_analyses (
-      id TEXT PRIMARY KEY,
-      file_pair_id TEXT NOT NULL,
-      dropout_curve TEXT NOT NULL,
-      audio_analysis TEXT NOT NULL,
-      textual_visual_analysis TEXT NOT NULL,
-      visual_analysis TEXT NOT NULL,
-      block_dropout_analysis TEXT NOT NULL,
-      timeline_alignment TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      FOREIGN KEY (file_pair_id) REFERENCES file_pairs (id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS analysis_logs (
-      id TEXT PRIMARY KEY,
-      file_pair_id TEXT NOT NULL,
-      step TEXT NOT NULL,
-      message TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'running',
-      details TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      FOREIGN KEY (file_pair_id) REFERENCES file_pairs (id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_file_pairs_session_id ON file_pairs (session_id);
-    CREATE INDEX IF NOT EXISTS idx_video_analyses_file_pair_id ON video_analyses (file_pair_id);
-    CREATE INDEX IF NOT EXISTS idx_comprehensive_analyses_file_pair_id ON comprehensive_analyses (file_pair_id);
-    CREATE INDEX IF NOT EXISTS idx_analysis_logs_file_pair_id ON analysis_logs (file_pair_id);
-    CREATE INDEX IF NOT EXISTS idx_analysis_logs_created_at ON analysis_logs (created_at);
-  `);
-
-  // Migration: Add generated_title column if it doesn't exist
-  try {
-    await db.exec(`ALTER TABLE file_pairs ADD COLUMN generated_title TEXT;`);
-  } catch (error: any) {
-    // Column already exists or other error - ignore if it's a "duplicate column" error
-    if (!error.message.includes('duplicate column name')) {
-      console.warn('Migration warning:', error.message);
-    }
-  }
-
-  // Migration: Add details column to analysis_logs if it doesn't exist
-  try {
-    await db.exec(`ALTER TABLE analysis_logs ADD COLUMN details TEXT;`);
-  } catch (error: any) {
-    // Column already exists or other error - ignore if it's a "duplicate column" error
-    if (!error.message.includes('duplicate column name')) {
-      console.warn('Migration warning:', error.message);
-    }
-  }
-}
+// Database functions are moved to connectToDatabase.ts
 
 export function generateSessionId(): string {
   return uuidv4();
 }
 
 export async function createSession(sessionId: string): Promise<UserSession> {
-  const database = await getDatabase();
+  const { db } = await connectToDatabase();
   const createdAt = new Date().toISOString();
   
-  await database.run(
+  await db.run(
     'INSERT INTO sessions (id, created_at) VALUES (?, ?)',
     [sessionId, createdAt]
   );
@@ -157,16 +36,16 @@ export async function createSession(sessionId: string): Promise<UserSession> {
 }
 
 export async function getSession(sessionId: string): Promise<UserSession | null> {
-  const database = await getDatabase();
+  const { db } = await connectToDatabase();
   
-  const session = await database.get(
+  const session = await db.get(
     'SELECT * FROM sessions WHERE id = ?',
     [sessionId]
   );
   
   if (!session) return null;
   
-  const filePairs = await database.all(`
+  const filePairs = await db.all(`
     SELECT fp.*, 
            vm.duration, vm.width, vm.height, vm.fps, vm.bitrate, vm.format, vm.size, vm.title, vm.thumbnail_path, vm.streams,
            va.id as analysis_id, va.insights, va.recommendations, va.critical_moments, va.overall_score, va.improvement_areas, va.generated_at, va.report
@@ -188,7 +67,7 @@ export async function getSession(sessionId: string): Promise<UserSession | null>
       generatedTitle: row.generated_title
     };
     
-    if (row.duration !== null) {
+    if (row.duration) {
       filePair.videoMetadata = {
         duration: row.duration,
         width: row.width,
@@ -227,11 +106,12 @@ export async function getSession(sessionId: string): Promise<UserSession | null>
 }
 
 export async function addFilePairToSession(sessionId: string, filePair: UploadedFilePair): Promise<void> {
-  const database = await getDatabase();
+  const { db } = await connectToDatabase();
   
-  await database.run(`
-    INSERT INTO file_pairs (id, session_id, video_path, graph_path, video_name, graph_name, uploaded_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+  await db.run(`
+    INSERT INTO file_pairs (
+      id, session_id, video_path, graph_path, video_name, graph_name, uploaded_at, generated_title
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     filePair.id,
     sessionId,
@@ -239,26 +119,12 @@ export async function addFilePairToSession(sessionId: string, filePair: Uploaded
     filePair.graphPath,
     filePair.videoName,
     filePair.graphName,
-    filePair.uploadedAt
+    filePair.uploadedAt,
+    filePair.generatedTitle
   ]);
   
   if (filePair.videoMetadata) {
-    await database.run(`
-      INSERT INTO video_metadata (file_pair_id, duration, width, height, fps, bitrate, format, size, title, thumbnail_path, streams)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      filePair.id,
-      filePair.videoMetadata.duration,
-      filePair.videoMetadata.width,
-      filePair.videoMetadata.height,
-      filePair.videoMetadata.fps,
-      filePair.videoMetadata.bitrate,
-      filePair.videoMetadata.format,
-      filePair.videoMetadata.size,
-      filePair.videoMetadata.title || null,
-      filePair.videoMetadata.thumbnailPath || null,
-      filePair.videoMetadata.streams ? JSON.stringify(filePair.videoMetadata.streams) : null
-    ]);
+    await updateVideoMetadata(filePair.id, filePair.videoMetadata);
   }
   
   if (filePair.analysis) {
@@ -267,139 +133,251 @@ export async function addFilePairToSession(sessionId: string, filePair: Uploaded
 }
 
 export async function saveVideoAnalysis(filePairId: string, analysis: VideoAnalysis): Promise<void> {
-  const database = await getDatabase();
+  const { db } = await connectToDatabase();
   
-  await database.run(`
-    INSERT OR REPLACE INTO video_analyses (id, file_pair_id, insights, recommendations, critical_moments, overall_score, improvement_areas, generated_at, report)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `, [
-    analysis.id,
-    filePairId,
-    analysis.insights,
-    JSON.stringify(analysis.recommendations),
-    JSON.stringify(analysis.criticalMoments),
-    analysis.overallScore,
-    JSON.stringify(analysis.improvementAreas),
-    analysis.generatedAt,
-    analysis.report || null
-  ]);
+  // Convert arrays to JSON strings
+  const recommendations = JSON.stringify(analysis.recommendations);
+  const criticalMoments = JSON.stringify(analysis.criticalMoments);
+  const improvementAreas = JSON.stringify(analysis.improvementAreas);
+  
+  // Проверяем, существует ли уже анализ для этого ID
+  const existing = await db.get(
+    'SELECT id FROM video_analyses WHERE id = ?',
+    [analysis.id]
+  );
+  
+  if (existing) {
+    // Если анализ существует, обновляем его
+    await db.run(`
+      UPDATE video_analyses SET
+        insights = ?,
+        recommendations = ?,
+        critical_moments = ?,
+        overall_score = ?,
+        improvement_areas = ?,
+        report = ?
+      WHERE id = ?
+    `, [
+      analysis.insights,
+      recommendations,
+      criticalMoments,
+      analysis.overallScore,
+      improvementAreas,
+      analysis.report,
+      analysis.id
+    ]);
+  } else {
+    // Если анализа нет, создаем новый
+    await db.run(`
+      INSERT INTO video_analyses (
+        id, file_pair_id, insights, recommendations, critical_moments, 
+        overall_score, improvement_areas, generated_at, report
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      analysis.id,
+      filePairId,
+      analysis.insights,
+      recommendations,
+      criticalMoments,
+      analysis.overallScore,
+      improvementAreas,
+      analysis.generatedAt,
+      analysis.report
+    ]);
+  }
 }
 
 export async function getVideoAnalysis(filePairId: string): Promise<VideoAnalysis | null> {
-  const database = await getDatabase();
+  const { db } = await connectToDatabase();
   
-  const row = await database.get(
+  const analysis = await db.get(
     'SELECT * FROM video_analyses WHERE file_pair_id = ?',
     [filePairId]
   );
   
-  if (!row) return null;
+  if (!analysis) return null;
   
   return {
-    id: row.id,
-    insights: row.insights,
-    recommendations: JSON.parse(row.recommendations),
-    criticalMoments: JSON.parse(row.critical_moments),
-    overallScore: row.overall_score,
-    improvementAreas: JSON.parse(row.improvement_areas),
-    generatedAt: row.generated_at,
-    report: row.report
+    id: analysis.id,
+    insights: analysis.insights,
+    recommendations: JSON.parse(analysis.recommendations),
+    criticalMoments: JSON.parse(analysis.critical_moments),
+    overallScore: analysis.overall_score,
+    improvementAreas: JSON.parse(analysis.improvement_areas),
+    generatedAt: analysis.generated_at,
+    report: analysis.report
   };
 }
 
 export async function saveComprehensiveAnalysis(filePairId: string, analysis: ComprehensiveVideoAnalysis): Promise<string> {
-  const database = await getDatabase();
+  const { db } = await connectToDatabase();
+  
   const id = uuidv4();
   const createdAt = new Date().toISOString();
   
-  await database.run(`
-    INSERT OR REPLACE INTO comprehensive_analyses (
-      id, file_pair_id, dropout_curve, audio_analysis, textual_visual_analysis, 
-      visual_analysis, block_dropout_analysis, timeline_alignment, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `, [
-    id,
-    filePairId,
-    JSON.stringify(analysis.dropoutCurve),
-    JSON.stringify(analysis.audioAnalysis),
-    JSON.stringify(analysis.textualVisualAnalysis),
-    JSON.stringify(analysis.visualAnalysis),
-    JSON.stringify(analysis.blockDropoutAnalysis),
-    JSON.stringify(analysis.timelineAlignment),
-    createdAt
-  ]);
+  // Convert objects to JSON strings
+  const dropoutCurve = JSON.stringify(analysis.dropoutCurve);
+  const audioAnalysis = JSON.stringify(analysis.audioAnalysis);
+  const textualVisualAnalysis = analysis.textualVisualAnalysis ? JSON.stringify(analysis.textualVisualAnalysis) : 'null';
+  const visualAnalysis = JSON.stringify(analysis.visualAnalysis);
+  const blockDropoutAnalysis = JSON.stringify(analysis.contentBlocks?.filter(block => block.dropoutPercentage !== undefined) || []);
+  const timelineAlignment = JSON.stringify([]);  // Legacy field, now empty
   
-  return id;
-}
-
-export async function getComprehensiveAnalysis(filePairId: string): Promise<ComprehensiveVideoAnalysis | null> {
-  const database = await getDatabase();
-  
-  const row = await database.get(
-    'SELECT * FROM comprehensive_analyses WHERE file_pair_id = ? ORDER BY created_at DESC LIMIT 1',
+  // Проверяем, существует ли уже анализ для этого file_pair_id
+  const existing = await db.get(
+    'SELECT id FROM comprehensive_analyses WHERE file_pair_id = ?',
     [filePairId]
   );
   
-  if (!row) return null;
+  if (existing) {
+    // Если анализ существует, обновляем его
+    await db.run(`
+      UPDATE comprehensive_analyses SET
+        dropout_curve = ?,
+        audio_analysis = ?,
+        textual_visual_analysis = ?,
+        visual_analysis = ?,
+        block_dropout_analysis = ?,
+        timeline_alignment = ?,
+        created_at = ?
+      WHERE file_pair_id = ?
+    `, [
+      dropoutCurve,
+      audioAnalysis,
+      textualVisualAnalysis,
+      visualAnalysis,
+      blockDropoutAnalysis,
+      timelineAlignment,
+      createdAt,
+      filePairId
+    ]);
+    return existing.id;
+  } else {
+    // Если анализа нет, создаем новый
+    await db.run(`
+      INSERT INTO comprehensive_analyses (
+        id, file_pair_id, dropout_curve, audio_analysis, textual_visual_analysis, 
+        visual_analysis, block_dropout_analysis, timeline_alignment, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      id,
+      filePairId,
+      dropoutCurve,
+      audioAnalysis,
+      textualVisualAnalysis,
+      visualAnalysis,
+      blockDropoutAnalysis,
+      timelineAlignment,
+      createdAt
+    ]);
+    return id;
+  }
+}
+
+export async function getComprehensiveAnalysis(filePairId: string): Promise<ComprehensiveVideoAnalysis | null> {
+  const { db } = await connectToDatabase();
+  
+  const analysis = await db.get(
+    'SELECT * FROM comprehensive_analyses WHERE file_pair_id = ?',
+    [filePairId]
+  );
+  
+  if (!analysis) return null;
   
   return {
-    dropoutCurve: JSON.parse(row.dropout_curve),
-    audioAnalysis: JSON.parse(row.audio_analysis),
-    textualVisualAnalysis: JSON.parse(row.textual_visual_analysis),
-    visualAnalysis: JSON.parse(row.visual_analysis),
-    blockDropoutAnalysis: JSON.parse(row.block_dropout_analysis),
-    timelineAlignment: JSON.parse(row.timeline_alignment)
+    dropoutCurve: JSON.parse(analysis.dropout_curve),
+    audioAnalysis: JSON.parse(analysis.audio_analysis),
+    textualVisualAnalysis: analysis.textual_visual_analysis !== 'null' ? JSON.parse(analysis.textual_visual_analysis) : undefined,
+    visualAnalysis: JSON.parse(analysis.visual_analysis),
+    contentBlocks: JSON.parse(analysis.block_dropout_analysis)
   };
 }
 
 export async function getAllSessions(): Promise<UserSession[]> {
-  const database = await getDatabase();
+  const { db } = await connectToDatabase();
   
-  const sessions = await database.all('SELECT * FROM sessions ORDER BY created_at DESC');
+  const sessions = await db.all(`
+    SELECT * FROM sessions
+    ORDER BY created_at DESC
+  `);
   
-  const result: UserSession[] = [];
-  for (const session of sessions) {
-    const fullSession = await getSession(session.id);
-    if (fullSession) {
-      result.push(fullSession);
-    }
-  }
+  const sessionsWithDetails = await Promise.all(
+    sessions.map(async (session: any) => getSession(session.id))
+  );
   
-  return result;
+  return sessionsWithDetails.filter((s): s is UserSession => s !== null);
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {
-  const database = await getDatabase();
-  await database.run('DELETE FROM sessions WHERE id = ?', [sessionId]);
+  const { db } = await connectToDatabase();
+  await db.run('DELETE FROM sessions WHERE id = ?', [sessionId]);
 }
 
 export async function updateVideoMetadata(filePairId: string, metadata: VideoMetadata): Promise<void> {
-  const database = await getDatabase();
+  const { db } = await connectToDatabase();
   
-  await database.run(`
-    INSERT OR REPLACE INTO video_metadata (file_pair_id, duration, width, height, fps, bitrate, format, size, title, thumbnail_path, streams)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `, [
-    filePairId,
-    metadata.duration,
-    metadata.width,
-    metadata.height,
-    metadata.fps,
-    metadata.bitrate,
-    metadata.format,
-    metadata.size,
-    metadata.title || null,
-    metadata.thumbnailPath || null,
-    metadata.streams ? JSON.stringify(metadata.streams) : null
-  ]);
+  // Convert streams to JSON if present
+  const streams = metadata.streams ? JSON.stringify(metadata.streams) : null;
+  
+  // Проверяем, существует ли уже метаданные для этого file_pair_id
+  const existing = await db.get(
+    'SELECT file_pair_id FROM video_metadata WHERE file_pair_id = ?',
+    [filePairId]
+  );
+  
+  if (existing) {
+    // Если метаданные существуют, обновляем их
+    await db.run(`
+      UPDATE video_metadata SET
+        duration = ?,
+        width = ?,
+        height = ?,
+        fps = ?,
+        bitrate = ?,
+        format = ?,
+        size = ?,
+        title = ?,
+        thumbnail_path = ?,
+        streams = ?
+      WHERE file_pair_id = ?
+    `, [
+      metadata.duration,
+      metadata.width,
+      metadata.height,
+      metadata.fps,
+      metadata.bitrate,
+      metadata.format,
+      metadata.size,
+      metadata.title,
+      metadata.thumbnailPath,
+      streams,
+      filePairId
+    ]);
+  } else {
+    // Если метаданных нет, создаем новые
+    await db.run(`
+      INSERT INTO video_metadata (
+        file_pair_id, duration, width, height, fps, bitrate, format, size, title, thumbnail_path, streams
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      filePairId,
+      metadata.duration,
+      metadata.width,
+      metadata.height,
+      metadata.fps,
+      metadata.bitrate,
+      metadata.format,
+      metadata.size,
+      metadata.title,
+      metadata.thumbnailPath,
+      streams
+    ]);
+  }
 }
 
 export async function savePairTitle(filePairId: string, title: string): Promise<void> {
-  const database = await getDatabase();
-  
-  await database.run(`
-    UPDATE file_pairs SET generated_title = ? WHERE id = ?
-  `, [title, filePairId]);
+  const { db } = await connectToDatabase();
+  await db.run('UPDATE file_pairs SET generated_title = ? WHERE id = ?', [title, filePairId]);
 }
 
 export interface AnalysisLog {
@@ -427,54 +405,234 @@ export interface AnalysisLog {
   };
 }
 
+export interface AnalysisPrompt {
+  id: string;
+  filePairId: string;
+  type: string;
+  prompt: string;
+  model: string;
+  createdAt: string;
+}
+
 export async function createAnalysisLog(filePairId: string, step: string, message: string, details?: AnalysisLog['details']): Promise<string> {
-  const database = await getDatabase();
-  const id = uuidv4();
-  const now = new Date().toISOString();
+  const { db } = await connectToDatabase();
   
-  await database.run(
-    'INSERT INTO analysis_logs (id, file_pair_id, step, message, status, details, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [id, filePairId, step, message, 'running', details ? JSON.stringify(details) : null, now, now]
-  );
+  const id = uuidv4();
+  const timestamp = new Date().toISOString();
+  const detailsJson = details ? JSON.stringify(details) : null;
+  
+  await db.run(`
+    INSERT INTO analysis_logs (id, file_pair_id, step, message, status, details, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `, [id, filePairId, step, message, 'running', detailsJson, timestamp, timestamp]);
   
   return id;
 }
 
-export async function updateAnalysisLog(logId: string, message: string, status: 'running' | 'completed' | 'error', details?: AnalysisLog['details']): Promise<void> {
-  const database = await getDatabase();
-  const now = new Date().toISOString();
+export async function saveAnalysisPrompt(filePairId: string, type: string, prompt: string, model: string): Promise<string> {
+  const { db } = await connectToDatabase();
   
-  await database.run(
-    'UPDATE analysis_logs SET message = ?, status = ?, details = ?, updated_at = ? WHERE id = ?',
-    [message, status, details ? JSON.stringify(details) : null, now, logId]
+  const id = uuidv4();
+  const createdAt = new Date().toISOString();
+  
+  // Сначала проверим, существует ли уже запись для этого filePairId и type
+  const existing = await db.get(
+    'SELECT id FROM analysis_prompts WHERE file_pair_id = ? AND type = ?',
+    [filePairId, type]
   );
+  
+  if (existing) {
+    // Если запись существует, обновляем её
+    await db.run(
+      'UPDATE analysis_prompts SET prompt = ?, model = ?, created_at = ? WHERE id = ?',
+      [prompt, model, createdAt, existing.id]
+    );
+    return existing.id;
+  } else {
+    // Если записи нет, создаём новую
+    await db.run(
+      'INSERT INTO analysis_prompts (id, file_pair_id, type, prompt, model, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [id, filePairId, type, prompt, model, createdAt]
+    );
+    return id;
+  }
+}
+
+export async function getAnalysisPrompt(filePairId: string, type: string): Promise<AnalysisPrompt | null> {
+  const { db } = await connectToDatabase();
+  
+  // First try to get by file pair ID and type
+  let prompt = await db.get(
+    'SELECT * FROM analysis_prompts WHERE file_pair_id = ? AND type = ?',
+    [filePairId, type]
+  );
+  
+  if (!prompt) {
+    console.log(`No prompt found for filePairId=${filePairId}, type=${type}`);
+    return null;
+  }
+  
+  return {
+    id: prompt.id,
+    filePairId: prompt.file_pair_id,
+    type: prompt.type,
+    prompt: prompt.prompt,
+    model: prompt.model,
+    createdAt: prompt.created_at
+  };
+}
+
+export async function updateAnalysisLog(logId: string, message: string, status: 'running' | 'completed' | 'error', details?: AnalysisLog['details']): Promise<void> {
+  const { db } = await connectToDatabase();
+  const updatedAt = new Date().toISOString();
+  const detailsJson = details ? JSON.stringify(details) : null;
+  
+  await db.run(`
+    UPDATE analysis_logs SET message = ?, status = ?, details = ?, updated_at = ? WHERE id = ?
+  `, [message, status, detailsJson, updatedAt, logId]);
 }
 
 export async function getAnalysisLogs(filePairId: string): Promise<AnalysisLog[]> {
-  const database = await getDatabase();
+  const { db } = await connectToDatabase();
   
-  const rows = await database.all(
-    'SELECT * FROM analysis_logs WHERE file_pair_id = ? ORDER BY created_at ASC',
-    [filePairId]
-  );
+  const logs = await db.all(`
+    SELECT * FROM analysis_logs 
+    WHERE file_pair_id = ? 
+    ORDER BY created_at
+  `, [filePairId]);
   
-  return rows.map((row: any) => ({
-    id: row.id,
-    filePairId: row.file_pair_id,
-    step: row.step,
-    message: row.message,
-    status: row.status,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    details: row.details ? JSON.parse(row.details) : undefined
+  return logs.map((log: any) => ({
+    id: log.id,
+    filePairId: log.file_pair_id,
+    step: log.step,
+    message: log.message,
+    status: log.status,
+    createdAt: log.created_at,
+    updatedAt: log.updated_at,
+    details: log.details ? JSON.parse(log.details) : undefined
   }));
 }
 
 export async function clearAnalysisLogs(filePairId: string): Promise<void> {
-  const database = await getDatabase();
-  
-  await database.run(
-    'DELETE FROM analysis_logs WHERE file_pair_id = ?',
-    [filePairId]
-  );
+  const { db } = await connectToDatabase();
+  await db.run('DELETE FROM analysis_logs WHERE file_pair_id = ?', [filePairId]);
+}
+
+/**
+ * Gets the file pair data for a given file pair ID
+ */
+export async function getFilePairData(filePairId: string) {
+  const { db } = await connectToDatabase();
+  return db.get('SELECT * FROM file_pairs WHERE id = ?', [filePairId]);
+}
+
+/**
+ * Gets all screenshot files for a given file pair
+ */
+export async function getScreenshotFilesForFilePair(filePairId: string) {
+  try {
+    const { db } = await connectToDatabase();
+    
+    // First get the file pair to get the session ID
+    const filePair = await db.get(
+      'SELECT * FROM file_pairs WHERE id = ?', 
+      [filePairId]
+    );
+    
+    if (!filePair || !filePair.session_id) {
+      console.error(`File pair not found or missing session_id: ${filePairId}`);
+      return [];
+    }
+    
+    const sessionId = filePair.session_id;
+    
+    // Get comprehensive analysis to find screenshot directory (if available)
+    const analysis = await db.get(
+      'SELECT * FROM comprehensive_analyses WHERE file_pair_id = ?',
+      [filePairId]
+    );
+    
+    // If we don't have the analysis, try to find screenshots in the default location
+    const uploadsPath = path.join('uploads', sessionId);
+    const screenshotsBasePath = path.join(uploadsPath, 'screenshots');
+    
+    // List all available screenshot directories
+    const publicDir = path.join(process.cwd(), 'public');
+    const screenshotsFullPath = path.join(publicDir, screenshotsBasePath);
+    
+    if (!fs.existsSync(screenshotsFullPath)) {
+      console.error(`Screenshots base directory not found: ${screenshotsFullPath}`);
+      return [];
+    }
+    
+    // Find all screenshot directories
+    const screenshotDirs = fs.readdirSync(screenshotsFullPath)
+      .map(dir => path.join(screenshotsFullPath, dir))
+      .filter(dir => fs.existsSync(dir) && fs.statSync(dir).isDirectory())
+      .sort((a, b) => fs.statSync(b).mtime.getTime() - fs.statSync(a).mtime.getTime()); // Sort by newest first
+    
+    if (screenshotDirs.length === 0) {
+      console.error(`No screenshot directories found in ${screenshotsFullPath}`);
+      return [];
+    }
+    
+    // Use the most recent directory
+    const latestDir = screenshotDirs[0];
+    const dirName = path.basename(latestDir);
+    
+    // Get all screenshots from this directory
+    const screenshotFiles = fs.readdirSync(latestDir)
+      .filter(file => file.endsWith('.jpg'))
+      .map(file => path.join(screenshotsBasePath, dirName, file))
+      .sort((a, b) => {
+        // Extract timestamp from filename (e.g., "screenshot_10.5s.jpg" -> 10.5)
+        const timeA = parseFloat(a.match(/screenshot_(\d+\.?\d*)s\.jpg$/)?.[1] || '0');
+        const timeB = parseFloat(b.match(/screenshot_(\d+\.?\d*)s\.jpg$/)?.[1] || '0');
+        return timeA - timeB;
+      });
+    
+    return screenshotFiles;
+  } catch (error) {
+    console.error('Error getting screenshot files:', error);
+    return [];
+  }
+}
+
+/**
+ * Updates the visual analysis for a file pair
+ */
+export async function updateVisualAnalysisForFilePair(filePairId: string, visualAnalysis: VisualAnalysis) {
+  try {
+    const { db } = await connectToDatabase();
+    
+    // First check if we have a comprehensive analysis
+    const existingAnalysis = await db.get(
+      'SELECT * FROM comprehensive_analyses WHERE file_pair_id = ?',
+      [filePairId]
+    );
+    
+    if (!existingAnalysis) {
+      console.warn(`No existing comprehensive analysis found for file pair ${filePairId}`);
+      return false;
+    }
+    
+    // Parse existing analysis
+    const analysis = {
+      dropoutCurve: JSON.parse(existingAnalysis.dropout_curve),
+      audioAnalysis: JSON.parse(existingAnalysis.audio_analysis),
+      textualVisualAnalysis: existingAnalysis.textual_visual_analysis !== 'null' 
+        ? JSON.parse(existingAnalysis.textual_visual_analysis) 
+        : undefined,
+      visualAnalysis: visualAnalysis,
+      contentBlocks: JSON.parse(existingAnalysis.block_dropout_analysis)
+    };
+    
+    // Save the updated analysis
+    await saveComprehensiveAnalysis(filePairId, analysis);
+    
+    return true;
+  } catch (error) {
+    console.error('Error updating visual analysis:', error);
+    throw error;
+  }
 } 

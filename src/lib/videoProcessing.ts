@@ -626,4 +626,31 @@ function fillVisualGaps(sampledAnalysis: Array<{timestamp: number, description: 
   }
   
   return result;
-} 
+}
+
+function fixBlockOverlaps(blocks: ContentBlock[]): ContentBlock[] {
+  if (blocks.length === 0) return blocks;
+
+  // Сортируем блоки по времени начала
+  const sortedBlocks = [...blocks].sort((a, b) => a.startTime - b.startTime);
+  
+  for (let i = 1; i < sortedBlocks.length; i++) {
+    const prevBlock = sortedBlocks[i - 1];
+    const currentBlock = sortedBlocks[i];
+    
+    // Если блоки пересекаются
+    if (currentBlock.startTime < prevBlock.endTime) {
+      // Завершаем предыдущий блок в момент начала текущего
+      prevBlock.endTime = currentBlock.startTime;
+      
+      // Если предыдущий блок стал слишком коротким (меньше 0.5 сек), корректируем
+      if (prevBlock.endTime - prevBlock.startTime < 0.5) {
+        prevBlock.endTime = prevBlock.startTime + 0.5;
+        // И сдвигаем текущий блок
+        currentBlock.startTime = prevBlock.endTime;
+      }
+    }
+  }
+  
+  return sortedBlocks;
+}

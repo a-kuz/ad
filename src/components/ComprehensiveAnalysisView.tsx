@@ -5,189 +5,305 @@ import {
   ContentBlock,
   DropoutCurvePoint 
 } from '@/types';
+import VerticalRetentionTimeline from './VerticalRetentionTimeline';
+import CustomPromptForm from './CustomPromptForm';
 
 interface ComprehensiveAnalysisViewProps {
   analysis: ComprehensiveVideoAnalysis;
+  sessionId: string;
+  filePairId: string;
 }
 
-const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ analysis }) => {
-  const [showAllPoints, setShowAllPoints] = useState(false);
+const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ 
+  analysis: initialAnalysis,
+  sessionId,
+  filePairId
+}) => {
+  const [analysis, setAnalysis] = useState<ComprehensiveVideoAnalysis>(initialAnalysis);
+  const [isVisualFormExpanded, setIsVisualFormExpanded] = useState<boolean>(false);
 
   const formatTime = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const formatPercentage = (value: number) => `${value.toFixed(2)}%`;
-
-  const getDropoutColor = (dropout: number) => {
-    if (dropout > 30) return 'text-red-600';
-    if (dropout > 15) return 'text-orange-600';
-    return 'text-green-600';
+  // Helper function to check if it's DropoutCurveTable
+  const isDropoutCurveTable = (curve: any): curve is { points: DropoutCurvePoint[], step: number, totalDuration: number } => {
+    return curve && Array.isArray(curve.points) && curve.points.length > 0 && curve.points[0].retentionPercentage !== undefined;
   };
 
-  const getDropoutIcon = (dropout: number) => {
-    if (dropout > 30) return '🔴';
-    if (dropout > 15) return '🟡';
-    return '🟢';
+  // Helper function to get points for display
+  const getDisplayPoints = () => {
+    if (!analysis?.dropoutCurve) return [];
+    
+    if (isDropoutCurveTable(analysis.dropoutCurve)) {
+      return analysis.dropoutCurve.points;
+    } else {
+      // Convert DropoutCurve to display points
+      const dropoutCurve = analysis.dropoutCurve as any;
+      if (!dropoutCurve.dropouts) return [];
+      
+      return dropoutCurve.dropouts.map((dropout: any) => ({
+        timestamp: dropout.time,
+        retentionPercentage: (dropout.viewersAfter / dropoutCurve.initialViewers) * 100,
+        dropoutPercentage: 100 - ((dropout.viewersAfter / dropoutCurve.initialViewers) * 100)
+      }));
+    }
   };
 
-  const getDropoutPercentage = (block: BlockDropoutAnalysis) => {
-    return block.relativeDropout ?? 0;
+  // Helper function to get total duration
+  const getTotalDuration = () => {
+    if (!analysis?.dropoutCurve) return 0;
+    
+    if (isDropoutCurveTable(analysis.dropoutCurve)) {
+      return analysis.dropoutCurve.totalDuration || 0;
+    } else {
+      return (analysis.dropoutCurve as any).totalDuration || 0;
+    }
+  };
+
+  // Update the analysis data when regenerated
+  const handleAnalysisUpdate = (newAnalysis: ComprehensiveVideoAnalysis) => {
+    setAnalysis(newAnalysis);
   };
 
   return (
-    <div className="space-y-6 bg-gray-100 min-h-screen">
-      {/* 1. Кривая досмотра */}
-      <div className="bg-white rounded-lg shadow border p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-xl font-semibold flex items-center text-gray-900">
-            <span className="w-3 h-3 bg-blue-500 rounded-full mr-2"></span>
-            1. Кривая досмотра ({showAllPoints ? 'все' : 'первые 20'} точек)
+    <div className="space-y-8">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold text-gray-900">Комплексный анализ</h2>
+      </div>
+
+      {/* Visual Analysis Settings */}
+      <div className="border-2 border-indigo-100 rounded-lg p-4">
+        <button 
+          onClick={() => setIsVisualFormExpanded(!isVisualFormExpanded)}
+          className="w-full flex justify-between items-center text-left"
+        >
+          <h3 className="text-xl font-semibold text-gray-900 flex items-center">
+            <span className="w-3 h-3 bg-purple-500 rounded-full mr-2"></span>
+            Настройки анализа визуального ряда
           </h3>
-          {analysis.dropoutCurve.points.length > 20 && (
-            <button
-              onClick={() => setShowAllPoints(!showAllPoints)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-            >
-              {showAllPoints ? 'Скрыть' : `Показать все ${analysis.dropoutCurve.points.length} точек`}
-            </button>
-          )}
-        </div>
+          <span className="text-indigo-600">
+            {isVisualFormExpanded ? '▲ Свернуть' : '▼ Развернуть'}
+          </span>
+        </button>
+        
+        {isVisualFormExpanded && (
+          <div className="mt-4">
+            <CustomPromptForm
+              filePairId={filePairId}
+              sessionId={sessionId}
+              type="visual"
+              onAnalysisUpdate={handleAnalysisUpdate}
+              defaultPrompt={analysis.visualAnalysis?.prompt || ''}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* 1. График отвалов */}
+      <div className="bg-white rounded-lg shadow border p-6">
+        <h3 className="text-xl font-semibold mb-4 flex items-center text-gray-900">
+          <span className="w-3 h-3 bg-red-500 rounded-full mr-2"></span>
+          График отвалов аудитории
+        </h3>
+        {getDisplayPoints().length > 0 ? (
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <div className="h-64 relative">
+              <svg viewBox="0 0 100 50" className="w-full h-full">
+                {/* Горизонтальные линии сетки */}
+                {[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map((percent) => (
+                  <line 
+                    key={`grid-h-${percent}`}
+                    x1="0" 
+                    y1={50 - percent / 2} 
+                    x2="100" 
+                    y2={50 - percent / 2} 
+                    stroke="#e5e7eb" 
+                    strokeWidth="0.2"
+                  />
+                ))}
+                
+                {/* Вертикальные линии сетки каждые 10% */}
+                {Array.from({length: 11}).map((_, i) => (
+                  <line 
+                    key={`grid-v-${i}`}
+                    x1={i * 10} 
+                    y1="0" 
+                    x2={i * 10} 
+                    y2="50" 
+                    stroke="#e5e7eb" 
+                    strokeWidth="0.2"
+                  />
+                ))}
+                
+                {/* График */}
+                <polyline
+                  points={getDisplayPoints().map((p: any) => {
+                    const x = (p.timestamp / (getTotalDuration() || 1)) * 100;
+                    const y = 50 - (p.retentionPercentage / 2);
+                    return `${x},${y}`;
+                  }).join(' ')}
+                  fill="none"
+                  stroke="#3b82f6"
+                  strokeWidth="0.5"
+                />
+                
+                {/* Заполнение под графиком */}
+                <path
+                  d={`
+                    M0,50 
+                    ${getDisplayPoints().map((p: any) => {
+                      const x = (p.timestamp / (getTotalDuration() || 1)) * 100;
+                      const y = 50 - (p.retentionPercentage / 2);
+                      return `L${x},${y}`;
+                    }).join(' ')} 
+                    L100,50 Z
+                  `}
+                  fill="url(#blue-gradient)"
+                  opacity="0.2"
+                />
+                
+                {/* Определение градиента */}
+                <defs>
+                  <linearGradient id="blue-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stopColor="#3b82f6" stopOpacity="1" />
+                    <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                
+                {/* Точки данных */}
+                {getDisplayPoints().filter((_, i) => i % 5 === 0).map((point: any, i) => {
+                  const x = (point.timestamp / (getTotalDuration() || 1)) * 100;
+                  const y = 50 - (point.retentionPercentage / 2);
+                  return (
+                    <circle 
+                      key={i}
+                      cx={x} 
+                      cy={y} 
+                      r="0.5" 
+                      fill="#3b82f6"
+                    />
+                  )
+                })}
+              </svg>
+              
+              {/* Метки оси Y (справа) */}
+              <div className="absolute top-0 right-0 h-full flex flex-col justify-between text-xs text-gray-500 py-1">
+                <div>100%</div>
+                <div>75%</div>
+                <div>50%</div>
+                <div>25%</div>
+                <div>0%</div>
+              </div>
+              
+              {/* Метки оси X (внизу) */}
+              <div className="absolute bottom-0 left-0 w-full flex justify-between text-xs text-gray-500 px-4">
+                <div>0s</div>
+                <div>{Math.round(getTotalDuration() / 4)}s</div>
+                <div>{Math.round(getTotalDuration() / 2)}s</div>
+                <div>{Math.round(getTotalDuration() * 3 / 4)}s</div>
+                <div>{Math.round(getTotalDuration())}s</div>
+              </div>
+            </div>
+            
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+                <div className="text-xs text-gray-500">Начальное удержание</div>
+                <div className="text-xl font-bold text-blue-600">
+                  {Math.round((getDisplayPoints()[0]?.retentionPercentage || 0))}%
+                </div>
+              </div>
+              <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+                <div className="text-xs text-gray-500">Конечное удержание</div>
+                <div className="text-xl font-bold text-blue-600">
+                  {Math.round((getDisplayPoints()[(getDisplayPoints().length || 0) - 1]?.retentionPercentage || 0))}%
+                </div>
+              </div>
+              <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+                <div className="text-xs text-gray-500">Наибольший спад</div>
+                <div className="text-xl font-bold text-red-600">
+                  {Math.round(Math.max(...getDisplayPoints().map((p, i, arr) => 
+                    i > 0 ? arr[i-1].retentionPercentage - p.retentionPercentage : 0
+                  )))}%
+                </div>
+              </div>
+              <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+                <div className="text-xs text-gray-500">Время половинного удержания</div>
+                <div className="text-xl font-bold text-gray-800">
+                  {formatTime(getDisplayPoints().find(p => p.retentionPercentage <= 50)?.timestamp || getTotalDuration())}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-gray-50 p-4 rounded-lg text-center">
+            <p className="text-gray-500">Нет данных для отображения кривой досмотра</p>
+          </div>
+        )}
+      </div>
+
+      {/* 2. Аудио анализ */}
+      <div className="bg-white rounded-lg shadow border p-6">
+        <h3 className="text-xl font-semibold mb-4 flex items-center text-gray-900">
+          <span className="w-3 h-3 bg-green-500 rounded-full mr-2"></span>
+          Аудио анализ
+          <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 text-sm rounded-full">
+            {analysis.audioAnalysis?.groups?.length || 0} блоков
+          </span>
+        </h3>
         <div className="overflow-x-auto">
-          <table className="min-w-full border border-gray-200 rounded-lg">
-            <thead>
-              <tr className="border-b bg-gray-100">
-                <th className="text-left py-3 px-4 font-semibold text-gray-800">Время</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-800">Удержание (%)</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-800">Отвал (%)</th>
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Название блока</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Время</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Содержание</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Назначение</th>
               </tr>
             </thead>
-            <tbody>
-              {(showAllPoints ? analysis.dropoutCurve.points : analysis.dropoutCurve.points.slice(0, 20)).map((point: DropoutCurvePoint, index: number) => (
-                <tr key={index} className={`border-b ${index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}`}>
-                  <td className="px-4 py-3 text-gray-800 font-medium">{formatTime(point.timestamp)}</td>
-                  <td className="px-4 py-3 text-gray-800 font-medium">{formatPercentage(point.retentionPercentage)}</td>
-                  <td className="px-4 py-3 text-gray-800 font-medium">{formatPercentage(point.dropoutPercentage)}</td>
-                </tr>
-              ))}
-              {!showAllPoints && analysis.dropoutCurve.points.length > 20 && (
-                <tr>
-                  <td colSpan={3} className="px-4 py-3 text-center text-gray-700 font-medium">
-                    ... и еще {analysis.dropoutCurve.points.length - 20} точек
+            <tbody className="bg-white divide-y divide-gray-200">
+              {analysis.audioAnalysis?.groups?.map((block) => (
+                <tr key={block.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm font-medium text-gray-900">{block.name}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-500">{formatTime(block.startTime)} - {formatTime(block.endTime)}</div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm text-gray-900 line-clamp-2">{block.content}</div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm text-gray-500">{block.purpose}</div>
                   </td>
                 </tr>
-              )}
+              ))}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* 2. Удержание по текстам в креативе */}
-      <div className="bg-white rounded-lg shadow border p-6">
-        <h3 className="text-xl font-semibold mb-4 flex items-center text-gray-900">
-          <span className="w-3 h-3 bg-blue-500 rounded-full mr-2"></span>
-          Удержание по текстам в креативе (все блоки)
-        </h3>
-        {analysis.textualVisualAnalysis.groups.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full bg-gray-800 text-white rounded-lg shadow border">
-              <thead>
-                <tr className="bg-gray-700">
-                  <th className="text-left py-3 px-4 font-semibold text-gray-100">№</th>
-                  <th className="text-left py-3 px-4 font-semibold text-gray-100">Группа текста</th>
-                  <th className="text-left py-3 px-4 font-semibold text-gray-100">Время (сек)</th>
-                  <th className="text-left py-3 px-4 font-semibold text-gray-100">Текст</th>
-                  <th className="text-left py-3 px-4 font-semibold text-gray-100">Начало (%)</th>
-                  <th className="text-left py-3 px-4 font-semibold text-gray-100">Конец (%)</th>
-                  <th className="text-left py-3 px-4 font-semibold text-gray-100">Отвал %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {analysis.textualVisualAnalysis.groups.map((block: ContentBlock, index: number) => {
-                  const dropout = analysis.blockDropoutAnalysis.find(d => 
-                    d.blockId === block.id && d.blockName === block.name
-                  );
-                  const dropoutPercentage = dropout?.relativeDropout ?? 0;
-                  return (
-                    <tr key={block.id} className="border-b border-gray-600 hover:bg-gray-700">
-                      <td className="py-3 px-4 text-gray-100 font-medium">{index + 1}</td>
-                      <td className="py-3 px-4 font-semibold text-gray-100">{block.name}</td>
-                      <td className="py-3 px-4 text-gray-100 font-medium">{block.startTime.toFixed(1)}–{block.endTime.toFixed(1)}</td>
-                      <td className="py-3 px-4 max-w-xs">
-                        <div className="break-words italic text-gray-200">
-                          {block.content || block.purpose}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 font-semibold text-gray-100">{dropout?.startRetention.toFixed(2) || 'N/A'}</td>
-                      <td className="py-3 px-4 font-semibold text-gray-100">{dropout?.endRetention.toFixed(2) || 'N/A'}</td>
-                      <td className="py-3 px-4">
-                        <span className={`font-semibold ${dropoutPercentage > 30 ? 'text-red-300' : dropoutPercentage > 15 ? 'text-yellow-300' : 'text-green-300'}`}>
-                          {dropoutPercentage > 0 ? `${getDropoutIcon(dropoutPercentage)} ${dropoutPercentage.toFixed(1)}%` : 
-                           dropoutPercentage === 0 ? `${getDropoutIcon(dropoutPercentage)} 0.0%` : 'N/A'}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="text-gray-700 font-medium">Нет данных о текстовых блоках</p>
-        )}
-      </div>
-
-      {/* 3. Анализ визуальных блоков: цель, смысл, удержание */}
-      <div className="bg-white rounded-lg shadow border p-6">
-        <h3 className="text-xl font-semibold mb-4 flex items-center text-gray-900">
-          <span className="w-3 h-3 bg-blue-500 rounded-full mr-2"></span>
-          Анализ визуальных блоков: цель, смысл, удержание
-        </h3>
-        {analysis.visualAnalysis.groups.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full bg-gray-800 text-white rounded-lg shadow border">
-              <thead>
-                <tr className="bg-gray-700">
-                  <th className="text-left py-3 px-4 font-semibold text-gray-100">Визуальный блок</th>
-                  <th className="text-left py-3 px-4 font-semibold text-gray-100">Время (сек)</th>
-                  <th className="text-left py-3 px-4 font-semibold text-gray-100">Цель</th>
-                  <th className="text-left py-3 px-4 font-semibold text-gray-100">Смысл для пользователя</th>
-                  <th className="text-left py-3 px-4 font-semibold text-gray-100">Отвал %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {analysis.visualAnalysis.groups.map((block: ContentBlock, index: number) => {
-                  const dropout = analysis.blockDropoutAnalysis.find(d => 
-                    d.blockId === block.id && d.blockName === block.name
-                  );
-                  const dropoutPercentage = dropout?.relativeDropout ?? 0;
-                  return (
-                    <tr key={block.id} className="border-b border-gray-600 hover:bg-gray-700">
-                      <td className="py-4 px-4 font-semibold text-gray-100">{block.name}</td>
-                      <td className="py-4 px-4 text-gray-100 font-medium">{block.startTime.toFixed(0)}–{block.endTime.toFixed(0)}</td>
-                      <td className="py-4 px-4 text-gray-100 font-medium">{block.purpose || 'Визуальный элемент'}</td>
-                      <td className="py-4 px-4 max-w-md">
-                        <div className="text-sm leading-relaxed break-words text-gray-200">
-                          {block.content || 'Создает визуальный интерес и поддерживает вовлеченность'}
-                        </div>
-                      </td>
-                      <td className="py-4 px-4">
-                        <span className={`font-semibold ${dropoutPercentage > 30 ? 'text-red-300' : dropoutPercentage > 15 ? 'text-yellow-300' : 'text-green-300'}`}>
-                          {dropoutPercentage > 0 ? `${getDropoutIcon(dropoutPercentage)} ${dropoutPercentage.toFixed(1)}%` : 
-                           dropoutPercentage === 0 ? `${getDropoutIcon(dropoutPercentage)} 0.0%` : 'N/A'}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="text-gray-700 font-medium">Нет данных о визуальных блоках</p>
-        )}
+      {/* 3. Визуальный анализ */}
+      <div className="p-4 border rounded-md shadow-sm bg-white mb-6">
+        <h3 className="text-lg font-semibold mb-2">Визуальный анализ</h3>
+        <p className="text-sm text-gray-500 mb-3">
+          {analysis.visualAnalysis?.groups?.length || 0} блоков
+        </p>
+        <div className="space-y-4">
+          {analysis.visualAnalysis?.groups?.map((block) => (
+            <div key={block.id} className="border-2 border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+              <div className="flex justify-between items-start mb-3">
+                <h4 className="font-semibold text-lg text-gray-900">{block.name}</h4>
+                <span className="text-sm text-gray-700 bg-gray-200 px-3 py-1 rounded font-medium">
+                  {formatTime(block.startTime)} - {formatTime(block.endTime)}
+                </span>
+              </div>
+              <p className="text-gray-800 mb-3 break-words font-medium">{block.content}</p>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* 4. Аудио блоки с анализом отвалов */}
@@ -197,8 +313,8 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
           Аудио блоки с анализом отвалов
         </h3>
         <div className="space-y-4">
-          {analysis.audioAnalysis.groups.map((block: ContentBlock) => {
-            const blockAnalysis = analysis.blockDropoutAnalysis.find(
+          {analysis.audioAnalysis?.groups?.map((block: ContentBlock) => {
+            const blockAnalysis = analysis.blockDropoutAnalysis?.find?.(
               (ba: BlockDropoutAnalysis) => ba.blockId === block.id && ba.blockName === block.name
             );
             return (
@@ -211,20 +327,26 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
                 </div>
                 <p className="text-gray-800 mb-3 break-words font-medium">{block.content}</p>
                 {blockAnalysis && (
-                  <div className="grid grid-cols-3 gap-4 text-sm bg-gray-100 border p-4 rounded">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4 bg-gray-50 p-3 rounded-lg">
                     <div>
-                      <span className="font-semibold text-gray-800">Начальное удержание:</span><br/>
-                      <span className="text-lg font-bold text-blue-700">{blockAnalysis.startRetention.toFixed(1)}%</span>
+                      <div className="text-xs text-gray-500">Начальное удержание</div>
+                      <div className="text-lg font-bold text-gray-900">{blockAnalysis.startRetention}%</div>
                     </div>
                     <div>
-                      <span className="font-semibold text-gray-800">Конечное удержание:</span><br/>
-                      <span className="text-lg font-bold text-blue-700">{blockAnalysis.endRetention.toFixed(1)}%</span>
+                      <div className="text-xs text-gray-500">Конечное удержание</div>
+                      <div className="text-lg font-bold text-gray-900">{blockAnalysis.endRetention}%</div>
                     </div>
                     <div>
-                      <span className="font-semibold text-gray-800">Отвал %:</span><br/>
-                      <span className={`text-lg font-bold ${(blockAnalysis.relativeDropout ?? 0) > 30 ? 'text-red-700' : (blockAnalysis.relativeDropout ?? 0) > 15 ? 'text-orange-700' : 'text-green-700'}`}>
-                        {getDropoutIcon(blockAnalysis.relativeDropout ?? 0)} {(blockAnalysis.relativeDropout ?? 0).toFixed(1)}%
-                      </span>
+                      <div className="text-xs text-gray-500">Абсолютный отвал</div>
+                      <div className={`text-lg font-bold ${blockAnalysis.absoluteDropout > 5 ? 'text-red-600' : 'text-gray-900'}`}>
+                        {blockAnalysis.absoluteDropout > 0 ? `-${blockAnalysis.absoluteDropout}%` : `+${Math.abs(blockAnalysis.absoluteDropout)}%`}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500">Относительный отвал</div>
+                      <div className={`text-lg font-bold ${blockAnalysis.relativeDropout > 20 ? 'text-red-600' : 'text-gray-900'}`}>
+                        {blockAnalysis.relativeDropout.toFixed(1)}%
+                      </div>
                     </div>
                   </div>
                 )}
@@ -234,129 +356,127 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({ a
         </div>
       </div>
 
-      {/* 5. Сопоставление блоков по времени */}
+      {/* 5. Визуальные блоки с анализом отвалов */}
       <div className="bg-white rounded-lg shadow border p-6">
         <h3 className="text-xl font-semibold mb-4 flex items-center text-gray-900">
           <span className="w-3 h-3 bg-purple-500 rounded-full mr-2"></span>
-          Сопоставление блоков по времени
+          Визуальные блоки с анализом отвалов
         </h3>
         <div className="space-y-4">
-          {[
-            ...analysis.audioAnalysis.groups.map(block => ({ ...block, type: 'Аудио', icon: '🎵', bgColor: 'bg-green-50', borderColor: 'border-green-200', tagColor: 'bg-green-100 text-green-800' })),
-            ...analysis.textualVisualAnalysis.groups.map(block => ({ ...block, type: 'Текст', icon: '📝', bgColor: 'bg-blue-50', borderColor: 'border-blue-200', tagColor: 'bg-blue-100 text-blue-800' })),
-            ...analysis.visualAnalysis.groups.map(block => ({ ...block, type: 'Визуал', icon: '🎬', bgColor: 'bg-purple-50', borderColor: 'border-purple-200', tagColor: 'bg-purple-100 text-purple-800' }))
-          ]
-            .sort((a, b) => a.startTime - b.startTime)
-            .map((block, index) => {
-              const dropout = analysis.blockDropoutAnalysis.find(d => 
-                d.blockId === block.id && d.blockName === block.name
-              );
-              const dropoutPercentage = dropout?.relativeDropout ?? 0;
-              const duration = block.endTime - block.startTime;
-              
-              return (
-                <div key={`${block.type}-${block.id}`} className={`${block.bgColor} ${block.borderColor} border-2 rounded-lg p-5 hover:shadow-md transition-shadow`}>
-                  {/* Заголовок блока */}
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center space-x-3">
-                      <span className="text-2xl">{block.icon}</span>
-                      <div>
-                        <h4 className="text-lg font-bold text-gray-900">{block.name}</h4>
-                        <span className={`inline-block px-3 py-1 rounded-full text-sm font-semibold ${block.tagColor}`}>
-                          {block.type}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-semibold text-gray-600">Время</div>
-                      <div className="text-lg font-bold text-gray-900">
-                        {formatTime(block.startTime)} - {formatTime(block.endTime)}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        Длительность: {duration.toFixed(1)}с
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Содержание */}
-                  <div className="mb-4">
-                    <div className="text-sm font-semibold text-gray-700 mb-2">Содержание:</div>
-                    <div className="text-gray-800 leading-relaxed bg-white p-3 rounded border">
-                      {block.content || block.purpose || 'Содержание не определено'}
-                    </div>
-                  </div>
-
-                  {/* Метрики удержания */}
-                  {dropout && (
-                    <div className="grid grid-cols-3 gap-4 bg-white p-4 rounded-lg border">
-                      <div className="text-center">
-                        <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">
-                          Начальное удержание
-                        </div>
-                        <div className="text-2xl font-bold text-blue-600">
-                          {dropout.startRetention.toFixed(1)}%
-                        </div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">
-                          Конечное удержание
-                        </div>
-                        <div className="text-2xl font-bold text-blue-600">
-                          {dropout.endRetention.toFixed(1)}%
-                        </div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">
-                          Отвал аудитории
-                        </div>
-                        <div className={`text-2xl font-bold ${dropoutPercentage > 30 ? 'text-red-600' : dropoutPercentage > 15 ? 'text-orange-600' : 'text-green-600'}`}>
-                          {getDropoutIcon(dropoutPercentage)} {dropoutPercentage.toFixed(1)}%
-                        </div>
-                        {dropoutPercentage > 30 && (
-                          <div className="text-xs text-red-600 font-semibold mt-1">
-                            ⚠️ Критический отвал
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
+          {analysis.visualAnalysis?.groups?.map((block: ContentBlock) => {
+            const blockAnalysis = analysis.blockDropoutAnalysis?.find?.(
+              (ba: BlockDropoutAnalysis) => ba.blockId === block.id && ba.blockName === block.name
+            );
+            return (
+              <div key={block.id} className="border-2 border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                <div className="flex justify-between items-start mb-3">
+                  <h4 className="font-semibold text-lg text-gray-900">{block.name}</h4>
+                  <span className="text-sm text-gray-700 bg-gray-200 px-3 py-1 rounded font-medium">
+                    {formatTime(block.startTime)} - {formatTime(block.endTime)}
+                  </span>
                 </div>
-              );
-            })}
+                <p className="text-gray-800 mb-3 break-words font-medium">{block.content}</p>
+                {blockAnalysis && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4 bg-gray-50 p-3 rounded-lg">
+                    <div>
+                      <div className="text-xs text-gray-500">Начальное удержание</div>
+                      <div className="text-lg font-bold text-gray-900">{blockAnalysis.startRetention}%</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500">Конечное удержание</div>
+                      <div className="text-lg font-bold text-gray-900">{blockAnalysis.endRetention}%</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500">Абсолютный отвал</div>
+                      <div className={`text-lg font-bold ${blockAnalysis.absoluteDropout > 5 ? 'text-red-600' : 'text-gray-900'}`}>
+                        {blockAnalysis.absoluteDropout > 0 ? `-${blockAnalysis.absoluteDropout}%` : `+${Math.abs(blockAnalysis.absoluteDropout)}%`}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500">Относительный отвал</div>
+                      <div className={`text-lg font-bold ${blockAnalysis.relativeDropout > 20 ? 'text-red-600' : 'text-gray-900'}`}>
+                        {blockAnalysis.relativeDropout.toFixed(1)}%
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
-      {/* Сводка по критическим блокам */}
-      <div className="bg-red-50 border-l-4 border-red-600 rounded-lg shadow border p-6">
-        <h3 className="text-xl font-semibold mb-4 text-red-900 flex items-center">
-          <span className="mr-2">⚠️</span>
-          Критические блоки (отвал > 30%)
+      {/* 6. Текстовые блоки с анализом отвалов */}
+      <div className="bg-white rounded-lg shadow border p-6">
+        <h3 className="text-xl font-semibold mb-4 flex items-center text-gray-900">
+          <span className="w-3 h-3 bg-blue-500 rounded-full mr-2"></span>
+          Текстовые блоки с анализом отвалов
         </h3>
-        <div className="space-y-3">
-          {analysis.blockDropoutAnalysis
-            .filter((block: BlockDropoutAnalysis) => getDropoutPercentage(block) > 30)
-            .sort((a: BlockDropoutAnalysis, b: BlockDropoutAnalysis) => getDropoutPercentage(b) - getDropoutPercentage(a))
-            .map((block: BlockDropoutAnalysis) => (
-              <div key={block.blockId} className="flex justify-between items-center p-3 bg-white rounded-lg shadow border">
-                <div>
-                  <span className="font-semibold text-gray-900">{block.blockName}</span>
-                  <div className="text-sm text-gray-700 font-medium">
+        <div className="space-y-4">
+          {analysis.textualVisualAnalysis?.groups?.map((block: ContentBlock) => {
+            const blockAnalysis = analysis.blockDropoutAnalysis?.find?.(
+              (ba: BlockDropoutAnalysis) => ba.blockId === block.id && ba.blockName === block.name
+            );
+            return (
+              <div key={block.id} className="border-2 border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                <div className="flex justify-between items-start mb-3">
+                  <h4 className="font-semibold text-lg text-gray-900">{block.name}</h4>
+                  <span className="text-sm text-gray-700 bg-gray-200 px-3 py-1 rounded font-medium">
                     {formatTime(block.startTime)} - {formatTime(block.endTime)}
-                  </div>
+                  </span>
                 </div>
-                <div className="text-right">
-                  <div className="text-red-700 font-bold text-lg">
-                    ▼ {getDropoutPercentage(block).toFixed(1)}%
+                <p className="text-gray-800 mb-3 break-words font-medium">{block.content}</p>
+                {blockAnalysis && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4 bg-gray-50 p-3 rounded-lg">
+                    <div>
+                      <div className="text-xs text-gray-500">Начальное удержание</div>
+                      <div className="text-lg font-bold text-gray-900">{blockAnalysis.startRetention}%</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500">Конечное удержание</div>
+                      <div className="text-lg font-bold text-gray-900">{blockAnalysis.endRetention}%</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500">Абсолютный отвал</div>
+                      <div className={`text-lg font-bold ${blockAnalysis.absoluteDropout > 5 ? 'text-red-600' : 'text-gray-900'}`}>
+                        {blockAnalysis.absoluteDropout > 0 ? `-${blockAnalysis.absoluteDropout}%` : `+${Math.abs(blockAnalysis.absoluteDropout)}%`}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500">Относительный отвал</div>
+                      <div className={`text-lg font-bold ${blockAnalysis.relativeDropout > 20 ? 'text-red-600' : 'text-gray-900'}`}>
+                        {blockAnalysis.relativeDropout.toFixed(1)}%
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-xs text-gray-700 font-medium">отвал в %</div>
-                </div>
+                )}
               </div>
-            ))}
-                      {analysis.blockDropoutAnalysis.filter((block: BlockDropoutAnalysis) => getDropoutPercentage(block) > 30).length === 0 && (
-            <div className="text-center py-4">
-              <span className="text-green-700 font-semibold">✅ Нет критических блоков с высоким отвалом</span>
-            </div>
-          )}
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg shadow border p-6">
+        <h3 className="text-xl font-semibold mb-4 flex items-center text-gray-900">
+          <span className="w-3 h-3 bg-indigo-500 rounded-full mr-2"></span>
+          Интерактивный таймлайн удержания аудитории
+          <span className="ml-2 px-2 py-1 bg-indigo-100 text-indigo-700 text-sm rounded-full">
+            {(analysis.audioAnalysis?.groups?.length || 0) + 
+             (analysis.textualVisualAnalysis?.groups?.length || 0) + 
+             (analysis.visualAnalysis?.groups?.length || 0)} блоков
+          </span>
+        </h3>
+        
+        <div className="bg-gray-50 p-6 rounded-lg overflow-x-auto">
+          <VerticalRetentionTimeline 
+            analysis={analysis}
+            maxDuration={Math.max(
+              ...(analysis.audioAnalysis?.groups || []).map(b => b.endTime || 0),
+              ...(analysis.textualVisualAnalysis?.groups || []).map(b => b.endTime || 0),
+              ...(analysis.visualAnalysis?.groups || []).map(b => b.endTime || 0),
+              analysis.dropoutCurve?.totalDuration || 0
+            )}
+          />
         </div>
       </div>
     </div>

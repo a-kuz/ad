@@ -175,8 +175,10 @@ export function generateTestAnalysis(duration: number = 30): ComprehensiveVideoA
     
     const absoluteDropout = startRetention - endRetention;
     
-    // Относительный отвал - это процентное изменение относительно начального удержания
-    // Если начальное удержание 100%, а конечное 84%, то относительный отвал = (100-84)/100 * 100 = 16%
+    // Относительный отвал - это процент зрителей, которые отвалились, 
+    // от общего числа зрителей, которые смотрели в начале блока
+    // Например: если начальное удержание 60%, а конечное 40%, 
+    // то относительный отвал = (60-40)/60 * 100 = 33.33%
     const relativeDropout = startRetention > 0 ? Math.max(0, (absoluteDropout / startRetention) * 100) : 0;
 
     blockDropoutAnalysis.push({

@@ -88,9 +88,16 @@ export default function AnalysisLogs({ filePairId, isAnalyzing }: AnalysisLogsPr
         
         // Извлекаем аудио блоки из логов
         const allAudioBlocks: AudioBlock[] = [];
+        const seenIds = new Set<string>();
+        
         data.logs.forEach((log: AnalysisLog) => {
           if (log.details?.audioBlocks) {
-            allAudioBlocks.push(...log.details.audioBlocks);
+            log.details.audioBlocks.forEach((block) => {
+              if (!seenIds.has(block.id)) {
+                seenIds.add(block.id);
+                allAudioBlocks.push(block);
+              }
+            });
           }
         });
         setAudioBlocks(allAudioBlocks);
@@ -180,7 +187,7 @@ export default function AnalysisLogs({ filePairId, isAnalyzing }: AnalysisLogsPr
             </div>
             <div className="space-y-1 max-h-32 overflow-y-auto">
               {log.details.audioBlocks.map((block, index) => (
-                <div key={block.id} className="text-xs text-green-700 bg-white p-1.5 rounded border">
+                <div key={`${block.id}-${index}`} className="text-xs text-green-700 bg-white p-1.5 rounded border">
                   <div className="font-medium">{block.name}</div>
                   <div className="text-green-600">
                     {formatTime(block.startTime)} - {formatTime(block.endTime)}
@@ -276,8 +283,8 @@ export default function AnalysisLogs({ filePairId, isAnalyzing }: AnalysisLogsPr
             </span>
           </div>
           <div className="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto">
-            {audioBlocks.slice(0, 5).map((block) => (
-              <div key={block.id} className="bg-green-50 border border-green-200 rounded p-2">
+            {audioBlocks.slice(0, 5).map((block, index) => (
+              <div key={`${block.id}-${index}`} className="bg-green-50 border border-green-200 rounded p-2">
                 <div className="flex justify-between items-start">
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-green-800 truncate">

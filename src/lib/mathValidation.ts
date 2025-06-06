@@ -70,13 +70,14 @@ export function validateBlockDropouts(blockDropouts: BlockDropoutAnalysis[]): st
       errors.push(`Блок ${block.blockName}: некорректный абсолютный отвал (${block.absoluteDropout} vs ожидаемый ${expectedAbsoluteDropout})`);
     }
 
-    // Проверяем относительный отвал
+    // Проверяем относительный отвал - это процент зрителей, которые отвалились, 
+    // от общего числа зрителей, которые смотрели в начале блока
     if (block.startRetention > 0) {
       const expectedRelativeDropout = (block.absoluteDropout / block.startRetention) * 100;
       const relativeDiff = Math.abs(block.relativeDropout - expectedRelativeDropout);
       
       if (relativeDiff > 0.1) {
-        errors.push(`Блок ${block.blockName}: некорректный относительный отвал (${block.relativeDropout}% vs ожидаемый ${expectedRelativeDropout}%)`);
+        errors.push(`Блок ${block.blockName}: некорректный относительный отвал (${block.relativeDropout.toFixed(1)}% vs ожидаемый ${expectedRelativeDropout.toFixed(1)}%)`);
       }
     }
 
