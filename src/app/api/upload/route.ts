@@ -111,21 +111,24 @@ export async function POST(req: NextRequest) {
           graphPath
         );
         
+        const blockDropoutAnalysis = analysisResult.blockDropoutAnalysis || [];
         const videoAnalysis = {
           id: uuidv4(),
-          insights: `Комплексный анализ завершен. Найдено ${analysisResult.blockDropoutAnalysis.length} блоков контента.`,
-          recommendations: analysisResult.blockDropoutAnalysis
+          insights: `Комплексный анализ завершен. Найдено ${blockDropoutAnalysis.length} блоков контента.`,
+          recommendations: blockDropoutAnalysis
             .filter(block => block.relativeDropout > 20)
             .map(block => `Высокий отвал в блоке "${block.blockName}": ${block.relativeDropout.toFixed(1)}%`),
-          criticalMoments: analysisResult.blockDropoutAnalysis
+          criticalMoments: blockDropoutAnalysis
             .filter(block => block.relativeDropout > 30)
             .map(block => ({
               timestamp: block.startTime,
               reason: `Критический отвал в блоке "${block.blockName}"`,
               severity: 'high' as const
             })),
-          overallScore: Math.max(0, Math.round(100 - analysisResult.blockDropoutAnalysis.reduce((avg, block) => avg + block.relativeDropout, 0) / analysisResult.blockDropoutAnalysis.length)),
-          improvementAreas: analysisResult.blockDropoutAnalysis
+          overallScore: blockDropoutAnalysis.length > 0 ? 
+            Math.max(0, Math.round(100 - blockDropoutAnalysis.reduce((avg, block) => avg + block.relativeDropout, 0) / blockDropoutAnalysis.length)) : 
+            0,
+          improvementAreas: blockDropoutAnalysis
             .filter(block => block.relativeDropout > 15)
             .map(block => `Оптимизировать блок "${block.blockName}"`),
           generatedAt: new Date().toISOString(),

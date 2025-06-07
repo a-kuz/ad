@@ -4,6 +4,8 @@ import { ComprehensiveVideoAnalysis, ContentBlock, BlockDropoutAnalysis, Dropout
 interface VerticalRetentionTimelineProps {
   analysis: ComprehensiveVideoAnalysis;
   maxDuration: number;
+  sessionId?: string;
+  filePairId?: string;
 }
 
 interface BlockWithTrack extends ContentBlock {
@@ -16,13 +18,81 @@ interface BlockWithTrack extends ContentBlock {
 
 const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({ 
   analysis, 
-  maxDuration 
+  maxDuration, 
+  sessionId,
+  filePairId
 }) => {
   const [showAudio, setShowAudio] = React.useState(true);
   const [showText, setShowText] = React.useState(true);
   const [showVisual, setShowVisual] = React.useState(true);
+  const [showScreenshots, setShowScreenshots] = React.useState(true);
   const [selectedBlock, setSelectedBlock] = React.useState<string | null>(null);
   const [highlightedBlocks, setHighlightedBlocks] = React.useState<Set<string>>(new Set());
+  const [screenshotPaths, setScreenshotPaths] = React.useState<{[key: string]: string}>({});
+  const [screenshotsLoading, setScreenshotsLoading] = React.useState(false);
+
+  // Загружаем пути к скриншотам при монтировании компонента
+  React.useEffect(() => {
+    if (filePairId && analysis.visualAnalysis?.screenshots && analysis.visualAnalysis.screenshots.length > 0) {
+      const loadScreenshotPaths = async () => {
+        setScreenshotsLoading(true);
+        try {
+          const response = await fetch(`/api/get-screenshot-files/${filePairId}`);
+          if (response.ok) {
+            const data = await response.json();
+            
+            if (data.screenshots && data.screenshots.length > 0) {
+              const pathsMap: {[key: string]: string} = {};
+              
+              // Создаем карту timestamp -> путь к файлу
+              data.screenshots.forEach((path: string) => {
+                const match = path.match(/screenshot_(\d+\.?\d*)s\.jpg$/);
+                if (match) {
+                  const timestamp = parseFloat(match[1]);
+                  pathsMap[timestamp.toString()] = `/${path}`;
+                  pathsMap[timestamp.toFixed(1)] = `/${path}`;
+                }
+              });
+              
+              console.log(`Loaded ${Object.keys(pathsMap).length} screenshot paths for filePairId: ${filePairId}`);
+              setScreenshotPaths(pathsMap);
+            } else {
+              console.warn(`No screenshots returned for filePairId: ${filePairId}`);
+              setScreenshotPaths({});
+            }
+          } else {
+            console.warn('Failed to load screenshot paths:', response.status, response.statusText);
+            // Provide more detailed error info
+            try {
+              const errorData = await response.json();
+              console.warn('Error details:', errorData);
+            } catch (e) {
+              // Response is not JSON
+            }
+            setScreenshotPaths({});
+          }
+        } catch (error) {
+          console.error('Failed to load screenshot paths:', error);
+          setScreenshotPaths({});
+        } finally {
+          setScreenshotsLoading(false);
+        }
+      };
+      
+      loadScreenshotPaths();
+    } else {
+      // Clear paths if there are no screenshots in the analysis
+      console.log('No screenshots in analysis, clearing paths');
+      setScreenshotPaths({});
+      setScreenshotsLoading(false);
+    }
+  }, [filePairId, analysis.visualAnalysis?.screenshots]);
+
+  // Функция для получения пути к скриншоту
+  const getScreenshotPath = (timestamp: number): string => {
+    const key = timestamp.toFixed(1);
+    return screenshotPaths[key] || screenshotPaths[timestamp.toString()] || '';
+  };
 
   const formatTime = (seconds: number) => {
     return `${seconds.toFixed(1)}s`;
@@ -261,8 +331,8 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
   };
 
   const blocksWithTracks = prepareBlocks();
-  // Всегда показываем 3 трека: Визуальные, Аудио, Текстовые
-  const totalTracks = 3;
+  // Всегда показываем 4 трека: Визуальные, Аудио, Текстовые, Скриншоты
+  const totalTracks = 4;
 
   
 
@@ -291,9 +361,9 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
       if (blocks.length === 0) return;
       
       let maxDropoutRate = -1;
-      let maxDropoutBlock: BlockWithTrack | undefined = undefined;
+      let maxDropoutBlock: BlockWithTrack | null = null;
       
-      blocks.forEach(block => {
+      blocks.forEach((block: BlockWithTrack) => {
         const samplePoints = 5;
         const stepSize = (block.endTime - block.startTime) / samplePoints;
         let totalRelativeDropout = 0;
@@ -308,12 +378,12 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
         
         if (avgDropoutRate > maxDropoutRate) {
           maxDropoutRate = avgDropoutRate;
-          maxDropoutBlock = block;
+          maxDropoutBlock = block as BlockWithTrack;
         }
       });
       
       if (maxDropoutBlock) {
-        highlightedIds.add(maxDropoutBlock.id);
+        highlightedIds.add((maxDropoutBlock as BlockWithTrack).id);
       }
     });
     
@@ -321,11 +391,12 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
   }, [blocksWithTracks.length, maxDuration]);
 
   // Размеры - увеличиваем ширину треков и убираем отступы по бокам
-  const pixelsPerSecond = 100;
+  const pixelsPerSecond = 150;
   const timelineHeight = maxDuration * pixelsPerSecond + 60;
   const trackWidth = 280; // Увеличиваем ширину треков
+  const screenshotsTrackWidth =  170; // Ширина трека со скриншотами
   const timeAxisWidth = 120; // Уменьшаем ширину временной шкалы
-  const timelineWidth = (totalTracks + 1) * trackWidth + timeAxisWidth; // +1 для места под информационный блок
+  const timelineWidth = 3 * trackWidth + screenshotsTrackWidth + trackWidth + timeAxisWidth; // 3 обычных трека + скриншоты + информация
 
   // Создаем временные метки каждые 0.5 секунды
   const timeMarks: number[] = [];
@@ -337,8 +408,9 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
   const hasAudioBlocks = (analysis.audioAnalysis?.groups?.length || 0) > 0;
   const hasTextBlocks = (analysis.textualVisualAnalysis?.groups?.length || 0) > 0;
   const hasVisualBlocks = (analysis.visualAnalysis?.groups?.length || 0) > 0;
+  const hasScreenshots = (analysis.visualAnalysis?.screenshots?.length || 0) > 0;
 
-  if (!hasAudioBlocks && !hasTextBlocks && !hasVisualBlocks) {
+  if (!hasAudioBlocks && !hasTextBlocks && !hasVisualBlocks && !hasScreenshots) {
     return (
       <div className="p-6 bg-gray-50 border border-gray-200 rounded-lg text-center">
         <div className="text-gray-500">
@@ -356,7 +428,7 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
     <div className="w-full max-w-none relative">
       {/* Абсолютно позиционированная информация о выделенном блоке */}
       {selectedBlock && (() => {
-        const block = blocksWithTracks.find(b => b.id === selectedBlock);
+        const block: BlockWithTrack | undefined = blocksWithTracks.find(b => b.id === selectedBlock);
         const blockAnalysis = analysis.blockDropoutAnalysis?.find?.(
           (ba: BlockDropoutAnalysis) => ba.blockId === selectedBlock
         );
@@ -417,7 +489,7 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
           <div 
             className="absolute z-50 w-80" 
             style={{ 
-              left: `${timeAxisWidth + 3 * trackWidth}px`, 
+              left: `${timeAxisWidth + 3 * trackWidth + screenshotsTrackWidth}px`, 
               top: `${blockY}px` 
             }}
           >
@@ -611,6 +683,21 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
               </span>
             </label>
           )}
+          
+          {hasScreenshots && (
+            <label className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-3 rounded-lg transition-colors">
+              <input
+                type="checkbox"
+                checked={showScreenshots}
+                onChange={(e) => setShowScreenshots(e.target.checked)}
+                className="w-5 h-5 text-orange-600 bg-gray-100 border-gray-300 rounded focus:ring-orange-500 focus:ring-2"
+              />
+              <div className="w-5 h-5 bg-orange-500 rounded border border-orange-600"></div>
+              <span className="text-sm font-medium text-gray-700">
+                Скриншоты ({analysis.visualAnalysis?.screenshots?.length || 0})
+              </span>
+            </label>
+          )}
         </div>
         
         {/* Кнопки быстрого управления */}
@@ -620,6 +707,7 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
               setShowAudio(true);
               setShowText(true);
               setShowVisual(true);
+              setShowScreenshots(true);
             }}
             className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors font-medium"
           >
@@ -630,6 +718,7 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
               setShowAudio(false);
               setShowText(false);
               setShowVisual(false);
+              setShowScreenshots(false);
             }}
             className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors font-medium"
           >
@@ -754,8 +843,19 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
               })}
 
               {/* Вертикальные линии разделения треков */}
-              {Array.from({length: totalTracks + 2}).map((_, trackIndex) => {
-                const x = timeAxisWidth + trackIndex * trackWidth;
+              {Array.from({length: 6}).map((_, trackIndex) => {
+                let x;
+                if (trackIndex <= 3) {
+                  // Линии для первых 3 треков + начало трека скриншотов
+                  x = timeAxisWidth + trackIndex * trackWidth;
+                } else if (trackIndex === 4) {
+                  // Линия после трека скриншотов
+                  x = timeAxisWidth + 3 * trackWidth + screenshotsTrackWidth;
+                } else {
+                  // Линия после информационного блока
+                  x = timeAxisWidth + 3 * trackWidth + screenshotsTrackWidth + trackWidth;
+                }
+                
                 return (
                   <line 
                     key={`track-divider-${trackIndex}`}
@@ -984,11 +1084,139 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
                 );
               })}
 
+              {/* Скриншоты из визуального анализа */}
+              {showScreenshots && analysis.visualAnalysis?.screenshots?.map((screenshot, index) => {
+                const x = timeAxisWidth + 3 * trackWidth + 10; // Позиция в треке скриншотов
+                const y = 20 + screenshot.timestamp * pixelsPerSecond;
+                const screenshotWidth = screenshotsTrackWidth - 20;
+                const screenshotHeight = 80; // Увеличиваем высоту для лучшего отображения
+                
+                const imagePath = getScreenshotPath(screenshot.timestamp);
+                
+                return (
+                  <g key={`screenshot-${index}`}>
+                    {/* Фон для скриншота */}
+                    <rect
+                      x={x}
+                      y={y}
+                      width={screenshotWidth}
+                      height={screenshotHeight}
+                      fill="white"
+                      stroke="#E5E7EB"
+                      strokeWidth="1"
+                      rx="4"
+                      className="cursor-pointer hover:stroke-orange-400"
+                      onClick={() => {
+                        // Открываем скриншот в новом окне
+                        window.open(imagePath, '_blank');
+                      }}
+                    />
+                    
+                    {/* Реальное изображение скриншота */}
+                    {screenshotsLoading ? (
+                      <>
+                        {/* Индикатор загрузки */}
+                        <rect
+                          x={x + 2}
+                          y={y + 2}
+                          width={screenshotWidth - 4}
+                          height={screenshotHeight - 20}
+                          fill="#F9FAFB"
+                          stroke="#E5E7EB"
+                          strokeWidth="1"
+                          rx="2"
+                        />
+                        
+                        <text
+                          x={x + screenshotWidth / 2}
+                          y={y + (screenshotHeight - 20) / 2 + 2}
+                          textAnchor="middle"
+                          className="text-xs fill-gray-500"
+                          style={{ fontSize: '10px' }}
+                        >
+                          Загрузка...
+                        </text>
+                      </>
+                    ) : imagePath ? (
+                      <image
+                        x={x + 2}
+                        y={y + 2}
+                        width={screenshotWidth - 4}
+                        height={screenshotHeight - 20}
+                        href={imagePath}
+                        preserveAspectRatio="xMidYMid slice"
+                        className="cursor-pointer hover:opacity-80"
+                        onClick={() => {
+                          window.open(imagePath, '_blank');
+                        }}
+                      />
+                    ) : (
+                      <>
+                        {/* Fallback placeholder если путь к изображению не найден */}
+                        <rect
+                          x={x + 2}
+                          y={y + 2}
+                          width={screenshotWidth - 4}
+                          height={screenshotHeight - 20}
+                          fill="#F3F4F6"
+                          stroke="#D1D5DB"
+                          strokeWidth="1"
+                          rx="2"
+                        />
+                        
+                        <text
+                          x={x + screenshotWidth / 2}
+                          y={y + (screenshotHeight - 20) / 2 + 2}
+                          textAnchor="middle"
+                          className="text-xs fill-gray-400"
+                          style={{ fontSize: '12px' }}
+                        >
+                          🖼️
+                        </text>
+                      </>
+                    )}
+                    
+                    {/* Время скриншота */}
+                    <text
+                      x={x + screenshotWidth / 2}
+                      y={y + screenshotHeight - 4}
+                      textAnchor="middle"
+                      className="text-xs fill-gray-600"
+                      style={{ fontSize: '10px' }}
+                    >
+                      {formatTime(screenshot.timestamp)}
+                    </text>
+                    
+                    {/* Описание скриншота при наведении */}
+                    {screenshot.description && (
+                      <title>{screenshot.description}</title>
+                    )}
+                  </g>
+                );
+              })}
+
               {/* Подписи треков */}
-              {Array.from({length: totalTracks + 1}).map((_, trackIndex) => {
-                const x = timeAxisWidth + trackIndex * trackWidth + trackWidth / 2;
-                const trackNames = ['Визуальные', 'Аудио', 'Текстовые', 'Информация'];
-                const trackColors = ['#8B5CF6', '#10B981', '#3B82F6', '#6B7280'];
+              {Array.from({length: 5}).map((_, trackIndex) => {
+                let x, trackName, trackColor;
+                
+                if (trackIndex < 3) {
+                  // Первые 3 трека: Визуальные, Аудио, Текстовые
+                  x = timeAxisWidth + trackIndex * trackWidth + trackWidth / 2;
+                  const trackNames = ['Визуальные', 'Аудио', 'Текстовые'];
+                  const trackColors = ['#8B5CF6', '#10B981', '#3B82F6'];
+                  trackName = trackNames[trackIndex];
+                  trackColor = trackColors[trackIndex];
+                } else if (trackIndex === 3) {
+                  // Трек скриншотов (4-й трек)
+                  x = timeAxisWidth + 3 * trackWidth + screenshotsTrackWidth / 2;
+                  trackName = 'Скриншоты';
+                  trackColor = '#F97316';
+                } else {
+                  // Информационный блок (5-й трек)
+                  x = timeAxisWidth + 3 * trackWidth + screenshotsTrackWidth + trackWidth / 2;
+                  trackName = 'Информация';
+                  trackColor = '#6B7280';
+                }
                 
                 return (
                   <g key={`track-header-${trackIndex}`}>
@@ -997,9 +1225,9 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
                       y={15} 
                       textAnchor="middle" 
                       className="text-sm font-bold"
-                      fill={trackColors[trackIndex]}
+                      fill={trackColor}
                     >
-                      {trackNames[trackIndex]}
+                      {trackName}
                     </text>
                   </g>
                 );
@@ -1055,23 +1283,55 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
             </div>
           </div>
         )}
+        
+        {showScreenshots && hasScreenshots && (
+          <div className="bg-white p-4 rounded-lg border border-orange-200 shadow-sm">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-4 h-4 bg-orange-500 rounded border border-orange-600"></div>
+              <h4 className="font-semibold text-gray-900">Скриншоты</h4>
+              {screenshotsLoading && (
+                <div className="w-3 h-3 border border-orange-300 border-t-orange-600 rounded-full animate-spin"></div>
+              )}
+            </div>
+            <div className="text-sm text-gray-600">
+              {analysis.visualAnalysis?.screenshots?.length || 0} скриншотов на таймлайне
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              {screenshotsLoading ? 'Загрузка путей к файлам...' : 
+               Object.keys(screenshotPaths).length > 0 ? 'Кликните для увеличения' : 
+               'Файлы скриншотов не найдены'}
+            </div>
+          </div>
+        )}
       </div>
       
       {/* Сводка */}
       <div className="mt-6 p-4 bg-gray-50 rounded-lg border">
         <div className="text-sm text-gray-700">
-          <span className="font-medium">Треков используется:</span> {totalTracks} • 
+          <span className="font-medium">Треков используется:</span> {3 + (showScreenshots ? 1 : 0)} • 
           <span className="font-medium ml-2">Блоков отображено:</span> {blocksWithTracks.length} из {
             (analysis.audioAnalysis?.groups?.length || 0) + 
             (analysis.textualVisualAnalysis?.groups?.length || 0) + 
             (analysis.visualAnalysis?.groups?.length || 0)
           } общих • 
+          {showScreenshots && hasScreenshots && (
+            <>
+              <span className="font-medium ml-2">Скриншотов:</span> {analysis.visualAnalysis?.screenshots?.length || 0} • 
+            </>
+          )}
           <span className="font-medium ml-2">Проблемных блоков:</span> <span className="text-red-600 font-bold">{highlightedBlocks.size}</span> • 
           <span className="font-medium ml-2">Общая длительность:</span> {formatTime(maxDuration)}
         </div>
         {highlightedBlocks.size > 0 && (
           <div className="mt-2 text-xs text-red-600">
             🔴 Красной пунктирной рамкой выделены блоки с наивысшей скоростью падения в каждом треке
+          </div>
+        )}
+        {showScreenshots && hasScreenshots && (
+          <div className="mt-2 text-xs text-orange-600">
+            🖼️ {screenshotsLoading ? 'Загружаем скриншоты...' : 
+                Object.keys(screenshotPaths).length > 0 ? 'Скриншоты показывают ключевые моменты из визуального анализа • Кликните для увеличения' :
+                'Скриншоты из визуального анализа (файлы не найдены на сервере)'}
           </div>
         )}
       </div>
@@ -1084,10 +1344,10 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
         </div>
       )}
       
-          {!showAudio && !showText && !showVisual && (
+          {!showAudio && !showText && !showVisual && !showScreenshots && (
             <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
               <div className="text-sm text-yellow-800">
-                ⚠️ Все типы блоков скрыты. Включите хотя бы один тип для отображения на таймлайне.
+                ⚠️ Все треки скрыты. Включите хотя бы один трек для отображения на таймлайне.
               </div>
             </div>
           )}

@@ -92,6 +92,8 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({
               ...(analysis.visualAnalysis?.groups || []).map(b => b.endTime || 0),
               analysis.dropoutCurve?.totalDuration || 0
             )}
+            sessionId={sessionId}
+            filePairId={filePairId}
           />
         </div>
       </div>

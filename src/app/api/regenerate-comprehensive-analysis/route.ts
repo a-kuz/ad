@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Search for screenshots directory in public/uploads/[sessionId]/screenshots
-    const screenshotsBaseDir = path.join(process.cwd(), 'public', 'uploads', sessionId, 'screenshots');
+    const screenshotsBaseDir = path.join(process.cwd(), 'public', 'uploads', sessionId, 'screenshots', filePairId);
     
     if (!fs.existsSync(screenshotsBaseDir)) {
       return NextResponse.json({ 
@@ -100,7 +100,9 @@ export async function POST(request: NextRequest) {
     console.log(`Found ${screenshots.length} screenshots`);
 
     // Calculate step based on video duration and number of screenshots
-    const step = existingAnalysis.dropoutCurve.totalDuration / screenshots.length;
+    const step = existingAnalysis.dropoutCurve?.totalDuration ? 
+      existingAnalysis.dropoutCurve.totalDuration / screenshots.length : 
+      1;
 
     console.log('Starting visual analysis with custom prompt and model');
 
@@ -119,8 +121,14 @@ export async function POST(request: NextRequest) {
     console.log('Starting block dropout analysis');
     
     // Call the block dropout analysis function directly
+    if (!existingAnalysis.dropoutCurve || !existingAnalysis.audioAnalysis) {
+      return NextResponse.json({ 
+        error: 'Missing required analysis data (dropoutCurve or audioAnalysis)' 
+      }, { status: 400 });
+    }
+
     const updatedAnalysis = await analyzeBlockDropouts({
-      dropoutCurve: existingAnalysis.dropoutCurve,
+      dropoutCurve: existingAnalysis.dropoutCurve as any,
       audioAnalysis: existingAnalysis.audioAnalysis,
       textualVisualAnalysis: existingAnalysis.textualVisualAnalysis,
       visualAnalysis: newVisualAnalysis

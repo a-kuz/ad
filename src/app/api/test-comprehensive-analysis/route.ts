@@ -21,21 +21,24 @@ export async function POST(request: NextRequest) {
     if (session) {
       const filePair = session.filePairs.find(fp => fp.id === filePairId);
       if (filePair) {
+        const blockDropoutAnalysis = testAnalysis.blockDropoutAnalysis || [];
         const videoAnalysis = {
           id: uuidv4(),
-          insights: `Тестовый комплексный анализ. Найдено ${testAnalysis.blockDropoutAnalysis.length} блоков контента.`,
-          recommendations: testAnalysis.blockDropoutAnalysis
+          insights: `Тестовый комплексный анализ. Найдено ${blockDropoutAnalysis.length} блоков контента.`,
+          recommendations: blockDropoutAnalysis
             .filter(block => block.relativeDropout > 20)
             .map(block => `Высокий отвал в блоке "${block.blockName}": ${block.relativeDropout.toFixed(1)}%`),
-          criticalMoments: testAnalysis.blockDropoutAnalysis
+          criticalMoments: blockDropoutAnalysis
             .filter(block => block.relativeDropout > 30)
             .map(block => ({
               timestamp: block.startTime,
               reason: `Критический отвал в блоке "${block.blockName}"`,
               severity: 'high' as const
             })),
-          overallScore: Math.max(0, Math.round(100 - testAnalysis.blockDropoutAnalysis.reduce((avg, block) => avg + block.relativeDropout, 0) / testAnalysis.blockDropoutAnalysis.length)),
-          improvementAreas: testAnalysis.blockDropoutAnalysis
+          overallScore: blockDropoutAnalysis.length > 0 ? 
+            Math.max(0, Math.round(100 - blockDropoutAnalysis.reduce((avg, block) => avg + block.relativeDropout, 0) / blockDropoutAnalysis.length)) : 
+            0,
+          improvementAreas: blockDropoutAnalysis
             .filter(block => block.relativeDropout > 15)
             .map(block => `Оптимизировать блок "${block.blockName}"`),
           generatedAt: new Date().toISOString(),

@@ -309,7 +309,8 @@ export async function analyzeVisualScreenshots({
       screenshots: visualAnalysis,
       groups,
       prompt,
-      model: aiModel
+      model: aiModel,
+      screenshotsDir: screenshotsDir // Сохраняем ID папки со скриншотами
     };
 
     console.log('Analysis complete, returning results');

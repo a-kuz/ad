@@ -19,8 +19,8 @@ export default function TestMathPage() {
     
     // Валидируем математику
     const validation = validateAndFixAnalysis(
-      testAnalysis.dropoutCurve,
-      testAnalysis.blockDropoutAnalysis
+      testAnalysis.dropoutCurve as any,
+      testAnalysis.blockDropoutAnalysis || []
     );
     setValidationResult(validation);
     
@@ -126,7 +126,8 @@ export default function TestMathPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {analysis.dropoutCurve.points.slice(0, 10).map((point, index) => {
+                    {analysis.dropoutCurve && 'points' in analysis.dropoutCurve ? 
+                      analysis.dropoutCurve.points.slice(0, 10).map((point: any, index: number) => {
                       const expectedDropout = 100 - point.retentionPercentage;
                       const mathCheck = Math.abs(point.dropoutPercentage - expectedDropout) < 0.1;
                       
@@ -170,7 +171,7 @@ export default function TestMathPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {analysis.blockDropoutAnalysis.slice(0, 6).map((block, index) => {
+                    {analysis.blockDropoutAnalysis?.slice(0, 6).map((block, index) => {
                       const expectedAbsolute = block.startRetention - block.endRetention;
                       const expectedRelative = block.startRetention > 0 ? (expectedAbsolute / block.startRetention) * 100 : 0;
                       

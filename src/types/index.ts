@@ -160,6 +160,7 @@ export interface VisualAnalysis {
   groups: ContentBlock[];
   prompt?: string;
   model?: string;
+  screenshotsDir?: string; // ID папки со скриншотами для данного анализа
 }
 
 export interface BlockDropoutAnalysis {

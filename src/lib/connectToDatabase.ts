@@ -85,6 +85,7 @@ async function initializeSchema() {
       block_dropout_analysis TEXT NOT NULL,
       timeline_alignment TEXT NOT NULL,
       created_at TEXT NOT NULL,
+      screenshots_dir TEXT,
       FOREIGN KEY (file_pair_id) REFERENCES file_pairs (id) ON DELETE CASCADE
     );
 
@@ -131,6 +132,16 @@ async function initializeSchema() {
   // Migration: Add details column to analysis_logs if it doesn't exist
   try {
     await db.exec(`ALTER TABLE analysis_logs ADD COLUMN details TEXT;`);
+  } catch (error: any) {
+    // Column already exists or other error - ignore if it's a "duplicate column" error
+    if (!error.message.includes('duplicate column name')) {
+      console.warn('Migration warning:', error.message);
+    }
+  }
+
+  // Migration: Add screenshots_dir column to comprehensive_analyses if it doesn't exist
+  try {
+    await db.exec(`ALTER TABLE comprehensive_analyses ADD COLUMN screenshots_dir TEXT;`);
   } catch (error: any) {
     // Column already exists or other error - ignore if it's a "duplicate column" error
     if (!error.message.includes('duplicate column name')) {

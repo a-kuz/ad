@@ -223,6 +223,13 @@ export async function saveComprehensiveAnalysis(filePairId: string, analysis: Co
   const blockDropoutAnalysis = JSON.stringify(analysis.blockDropoutAnalysis || []);
   const timelineAlignment = JSON.stringify([]);  // Legacy field, now empty
   
+  // Extract screenshotsDir from visualAnalysis
+  let screenshotsDir = null;
+  if (analysis.visualAnalysis && analysis.visualAnalysis.screenshotsDir) {
+    screenshotsDir = analysis.visualAnalysis.screenshotsDir;
+    console.log(`Saving screenshotsDir: ${screenshotsDir} for filePairId: ${filePairId}`);
+  }
+  
   // Проверяем, существует ли уже анализ для этого file_pair_id
   const existing = await db.get(
     'SELECT id FROM comprehensive_analyses WHERE file_pair_id = ?',
@@ -239,6 +246,7 @@ export async function saveComprehensiveAnalysis(filePairId: string, analysis: Co
         visual_analysis = ?,
         block_dropout_analysis = ?,
         timeline_alignment = ?,
+        screenshots_dir = ?,
         created_at = ?
       WHERE file_pair_id = ?
     `, [
@@ -248,17 +256,19 @@ export async function saveComprehensiveAnalysis(filePairId: string, analysis: Co
       visualAnalysis,
       blockDropoutAnalysis,
       timelineAlignment,
+      screenshotsDir,
       createdAt,
       filePairId
     ]);
+    
     return existing.id;
   } else {
     // Если анализа нет, создаем новый
     await db.run(`
       INSERT INTO comprehensive_analyses (
         id, file_pair_id, dropout_curve, audio_analysis, textual_visual_analysis, 
-        visual_analysis, block_dropout_analysis, timeline_alignment, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        visual_analysis, block_dropout_analysis, timeline_alignment, screenshots_dir, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       id,
       filePairId,
@@ -268,8 +278,10 @@ export async function saveComprehensiveAnalysis(filePairId: string, analysis: Co
       visualAnalysis,
       blockDropoutAnalysis,
       timelineAlignment,
+      screenshotsDir,
       createdAt
     ]);
+    
     return id;
   }
 }
@@ -277,20 +289,41 @@ export async function saveComprehensiveAnalysis(filePairId: string, analysis: Co
 export async function getComprehensiveAnalysis(filePairId: string): Promise<ComprehensiveVideoAnalysis | null> {
   const { db } = await connectToDatabase();
   
-  const analysis = await db.get(
-    'SELECT * FROM comprehensive_analyses WHERE file_pair_id = ?',
-    [filePairId]
-  );
+  const analysis = await db.get(`
+    SELECT * FROM comprehensive_analyses
+    WHERE file_pair_id = ?
+  `, [filePairId]);
   
-  if (!analysis) return null;
+  if (!analysis) {
+    return null;
+  }
   
-  return {
-    dropoutCurve: JSON.parse(analysis.dropout_curve),
-    audioAnalysis: JSON.parse(analysis.audio_analysis),
-    textualVisualAnalysis: analysis.textual_visual_analysis !== 'null' ? JSON.parse(analysis.textual_visual_analysis) : undefined,
-    visualAnalysis: JSON.parse(analysis.visual_analysis),
-    blockDropoutAnalysis: JSON.parse(analysis.block_dropout_analysis)
-  };
+  try {
+    const dropoutCurve = JSON.parse(analysis.dropout_curve);
+    const audioAnalysis = JSON.parse(analysis.audio_analysis);
+    const textualVisualAnalysis = analysis.textual_visual_analysis !== 'null' 
+      ? JSON.parse(analysis.textual_visual_analysis) 
+      : undefined;
+    const visualAnalysis = JSON.parse(analysis.visual_analysis);
+    const blockDropoutAnalysis = JSON.parse(analysis.block_dropout_analysis);
+    
+    // If screenshotsDir is stored in the database, ensure it's also set in the visualAnalysis object
+    if (analysis.screenshots_dir && visualAnalysis) {
+      visualAnalysis.screenshotsDir = analysis.screenshots_dir;
+      console.log(`Added screenshotsDir from database: ${analysis.screenshots_dir} to visualAnalysis`);
+    }
+    
+    return {
+      dropoutCurve,
+      audioAnalysis,
+      textualVisualAnalysis,
+      visualAnalysis,
+      blockDropoutAnalysis
+    };
+  } catch (error) {
+    console.error('Error parsing comprehensive analysis:', error);
+    return null;
+  }
 }
 
 export async function getAllSessions(): Promise<UserSession[]> {
@@ -546,13 +579,23 @@ export async function getScreenshotFilesForFilePair(filePairId: string) {
     
     const sessionId = filePair.session_id;
     
-    // Get comprehensive analysis to find screenshot directory (if available)
+    // Get comprehensive analysis to find screenshot directory directly from screenshots_dir field
     const analysis = await db.get(
-      'SELECT * FROM comprehensive_analyses WHERE file_pair_id = ?',
+      'SELECT id, screenshots_dir FROM comprehensive_analyses WHERE file_pair_id = ?',
       [filePairId]
     );
     
-    // If we don't have the analysis, try to find screenshots in the default location
+    let screenshotsDir = null;
+    let analysisId = null;
+    
+    if (analysis) {
+      analysisId = analysis.id;
+      if (analysis.screenshots_dir) {
+        screenshotsDir = analysis.screenshots_dir;
+        console.log(`Found screenshotsDir in database: ${screenshotsDir}`);
+      }
+    }
+    
     const uploadsPath = path.join('uploads', sessionId);
     const screenshotsBasePath = path.join(uploadsPath, 'screenshots');
     
@@ -565,23 +608,78 @@ export async function getScreenshotFilesForFilePair(filePairId: string) {
       return [];
     }
     
-    // Find all screenshot directories
-    const screenshotDirs = fs.readdirSync(screenshotsFullPath)
-      .map(dir => path.join(screenshotsFullPath, dir))
-      .filter(dir => fs.existsSync(dir) && fs.statSync(dir).isDirectory())
-      .sort((a, b) => fs.statSync(b).mtime.getTime() - fs.statSync(a).mtime.getTime()); // Sort by newest first
+    let targetDir;
+    let dirName;
     
-    if (screenshotDirs.length === 0) {
-      console.error(`No screenshot directories found in ${screenshotsFullPath}`);
-      return [];
+    if (screenshotsDir) {
+      // Use the specific screenshots directory from the database
+      targetDir = path.join(screenshotsFullPath, screenshotsDir);
+      dirName = screenshotsDir;
+      
+      if (!fs.existsSync(targetDir)) {
+        console.warn(`Specific screenshots directory not found: ${targetDir}, falling back to latest`);
+        screenshotsDir = null; // Fall back to latest directory
+      } else {
+        console.log(`Using specific screenshots directory from database: ${targetDir}`);
+      }
     }
     
-    // Use the most recent directory
-    const latestDir = screenshotDirs[0];
-    const dirName = path.basename(latestDir);
+    if (!screenshotsDir) {
+      // Fall back to finding the most recent directory
+      const screenshotDirs = fs.readdirSync(screenshotsFullPath)
+        .map(dir => path.join(screenshotsFullPath, dir))
+        .filter(dir => fs.existsSync(dir) && fs.statSync(dir).isDirectory())
+        .sort((a, b) => fs.statSync(b).mtime.getTime() - fs.statSync(a).mtime.getTime()); // Sort by newest first
+      
+      if (screenshotDirs.length === 0) {
+        console.error(`No screenshot directories found in ${screenshotsFullPath}`);
+        return [];
+      }
+      
+      // Use the most recent directory
+      targetDir = screenshotDirs[0];
+      dirName = path.basename(targetDir);
+      console.log(`Using latest screenshots directory: ${targetDir}`);
+      
+      // Update the database with the latest directory if we have an analysis ID
+      if (analysisId) {
+        try {
+          // Update screenshots_dir field
+          await db.run(`
+            UPDATE comprehensive_analyses 
+            SET screenshots_dir = ? 
+            WHERE id = ?
+          `, [dirName, analysisId]);
+          
+          // Also update the visual_analysis JSON
+          const visualAnalysisRecord = await db.get(`
+            SELECT visual_analysis FROM comprehensive_analyses WHERE id = ?
+          `, [analysisId]);
+          
+          if (visualAnalysisRecord && visualAnalysisRecord.visual_analysis) {
+            try {
+              const visualAnalysis = JSON.parse(visualAnalysisRecord.visual_analysis);
+              visualAnalysis.screenshotsDir = dirName;
+              
+              await db.run(`
+                UPDATE comprehensive_analyses
+                SET visual_analysis = ?
+                WHERE id = ?
+              `, [JSON.stringify(visualAnalysis), analysisId]);
+              
+              console.log(`Updated database with latest screenshots directory: ${dirName} for analysis: ${analysisId}`);
+            } catch (e) {
+              console.warn(`Failed to update visual_analysis JSON: ${e}`);
+            }
+          }
+        } catch (updateError) {
+          console.warn(`Failed to update screenshots_dir in database: ${updateError}`);
+        }
+      }
+    }
     
     // Get all screenshots from this directory
-    const screenshotFiles = fs.readdirSync(latestDir)
+    const screenshotFiles = fs.readdirSync(targetDir)
       .filter(file => file.endsWith('.jpg'))
       .map(file => path.join(screenshotsBasePath, dirName, file))
       .sort((a, b) => {
@@ -616,6 +714,18 @@ export async function updateVisualAnalysisForFilePair(filePairId: string, visual
       return false;
     }
     
+    // Ensure screenshotsDir is set if available in the new visualAnalysis
+    if (visualAnalysis.screenshotsDir) {
+      console.log(`Updating with new screenshotsDir: ${visualAnalysis.screenshotsDir} for filePairId: ${filePairId}`);
+      
+      // Update the screenshots_dir field directly in the database
+      await db.run(`
+        UPDATE comprehensive_analyses 
+        SET screenshots_dir = ? 
+        WHERE file_pair_id = ?
+      `, [visualAnalysis.screenshotsDir, filePairId]);
+    }
+    
     // Parse existing analysis
     const analysis = {
       dropoutCurve: JSON.parse(existingAnalysis.dropout_curve),
@@ -624,7 +734,7 @@ export async function updateVisualAnalysisForFilePair(filePairId: string, visual
         ? JSON.parse(existingAnalysis.textual_visual_analysis) 
         : undefined,
       visualAnalysis: visualAnalysis,
-      contentBlocks: JSON.parse(existingAnalysis.block_dropout_analysis)
+      blockDropoutAnalysis: JSON.parse(existingAnalysis.block_dropout_analysis)
     };
     
     // Save the updated analysis
