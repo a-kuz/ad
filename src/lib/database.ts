@@ -220,7 +220,7 @@ export async function saveComprehensiveAnalysis(filePairId: string, analysis: Co
   const audioAnalysis = JSON.stringify(analysis.audioAnalysis);
   const textualVisualAnalysis = analysis.textualVisualAnalysis ? JSON.stringify(analysis.textualVisualAnalysis) : 'null';
   const visualAnalysis = JSON.stringify(analysis.visualAnalysis);
-  const blockDropoutAnalysis = JSON.stringify(analysis.contentBlocks?.filter(block => block.dropoutPercentage !== undefined) || []);
+  const blockDropoutAnalysis = JSON.stringify(analysis.blockDropoutAnalysis || []);
   const timelineAlignment = JSON.stringify([]);  // Legacy field, now empty
   
   // Проверяем, существует ли уже анализ для этого file_pair_id
@@ -289,7 +289,7 @@ export async function getComprehensiveAnalysis(filePairId: string): Promise<Comp
     audioAnalysis: JSON.parse(analysis.audio_analysis),
     textualVisualAnalysis: analysis.textual_visual_analysis !== 'null' ? JSON.parse(analysis.textual_visual_analysis) : undefined,
     visualAnalysis: JSON.parse(analysis.visual_analysis),
-    contentBlocks: JSON.parse(analysis.block_dropout_analysis)
+    blockDropoutAnalysis: JSON.parse(analysis.block_dropout_analysis)
   };
 }
 

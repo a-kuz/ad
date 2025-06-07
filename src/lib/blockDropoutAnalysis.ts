@@ -1,4 +1,4 @@
-import { ComprehensiveVideoAnalysis, VisualAnalysis, AudioAnalysis, TextualVisualAnalysis, DropoutCurve, ContentBlock } from '@/types';
+import { ComprehensiveVideoAnalysis, VisualAnalysis, AudioAnalysis, TextualVisualAnalysis, DropoutCurve, ContentBlock, BlockDropoutAnalysis } from '@/types';
 import OpenAI from 'openai';
 
 const openai = new OpenAI({
@@ -174,12 +174,46 @@ export async function analyzeBlockDropouts({
     }
   }
   
-  // Return the comprehensive analysis with the updated blocks
+  // Create blockDropoutAnalysis array with statistics for each block
+  const blockDropoutAnalysis: BlockDropoutAnalysis[] = allBlocks.map(block => {
+    // Find the viewer count at the start and end of the block
+    const pointsBeforeStart = dropoutCurve.dropouts.filter(point => point.time <= block.startTime)
+      .sort((a, b) => b.time - a.time);
+    const pointsBeforeEnd = dropoutCurve.dropouts.filter(point => point.time <= block.endTime)
+      .sort((a, b) => b.time - a.time);
+    
+    const startViewers = pointsBeforeStart.length > 0 
+      ? pointsBeforeStart[0].viewersAfter
+      : dropoutCurve.initialViewers;
+    const endViewers = pointsBeforeEnd.length > 0 
+      ? pointsBeforeEnd[0].viewersAfter
+      : dropoutCurve.initialViewers;
+    
+    const startRetention = (startViewers / dropoutCurve.initialViewers) * 100;
+    const endRetention = (endViewers / dropoutCurve.initialViewers) * 100;
+    const absoluteDropout = startRetention - endRetention;
+    const relativeDropout = startRetention > 0 ? (absoluteDropout / startRetention) * 100 : 0;
+    
+    return {
+      blockId: block.id,
+      blockName: block.name,
+      startTime: block.startTime,
+      endTime: block.endTime,
+      startRetention: Math.round(startRetention * 100) / 100,
+      endRetention: Math.round(endRetention * 100) / 100,
+      absoluteDropout: Math.round(absoluteDropout * 100) / 100,
+      relativeDropout: Math.round(relativeDropout * 100) / 100,
+      dropoutPercentage: Math.round((100 - endRetention) * 100) / 100
+    };
+  });
+
+  // Return the comprehensive analysis with the updated blocks and dropout analysis
   return {
     dropoutCurve,
     audioAnalysis,
     textualVisualAnalysis,
     visualAnalysis,
-    contentBlocks: allBlocks
+    contentBlocks: allBlocks,
+    blockDropoutAnalysis
   };
 } 
