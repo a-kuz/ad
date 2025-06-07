@@ -9,9 +9,9 @@ async function fixScreenshotsDirs() {
   
   // Get all analyses without screenshots_dir
   const analyses = await db.all(`
-    SELECT ca.id, ca.file_pair_id
+    SELECT ca.id, ca.file_pair_id, ca.created_at
     FROM comprehensive_analyses ca
-    WHERE ca.screenshots_dir IS NULL
+    WHERE ca.screenshots_dir IS NULL OR ca.screenshots_dir = ''
   `);
   
   console.log(`Found ${analyses.length} analyses without screenshots_dir`);
@@ -20,7 +20,7 @@ async function fixScreenshotsDirs() {
   let deletedCount = 0;
   
   for (const analysis of analyses) {
-    const { id, file_pair_id } = analysis;
+    const { id, file_pair_id, created_at } = analysis;
     
     // Check if the file pair exists
     const filePair = await db.get(`
@@ -50,20 +50,41 @@ async function fixScreenshotsDirs() {
       continue;
     }
     
-    // Find most recent screenshots directory
+    // Find most relevant screenshots directory based on creation time or file_pair_id
     const screenshotDirs = fs.readdirSync(screenshotsBasePath)
       .map(dir => path.join(screenshotsBasePath, dir))
       .filter(dir => fs.existsSync(dir) && fs.statSync(dir).isDirectory())
-      .sort((a, b) => fs.statSync(b).mtime.getTime() - fs.statSync(a).mtime.getTime()); // Sort by newest first
+      .map(dir => ({
+        path: dir,
+        name: path.basename(dir),
+        mtime: fs.statSync(dir).mtime.getTime()
+      }))
+      .sort((a, b) => b.mtime - a.mtime);
     
     if (screenshotDirs.length === 0) {
       console.log(`No screenshot subdirectories found for session: ${session_id}, file pair: ${file_pair_id}`);
       continue;
     }
     
-    // Use the most recent directory
-    const latestDir = screenshotDirs[0];
-    const dirName = path.basename(latestDir);
+    // Use the most recent directory or one that might match file_pair_id
+    let selectedDir = screenshotDirs[0];
+    const analysisCreationTime = new Date(created_at).getTime();
+    let smallestTimeDiff = Math.abs(analysisCreationTime - selectedDir.mtime);
+    
+    for (const dir of screenshotDirs) {
+      const timeDiff = Math.abs(analysisCreationTime - dir.mtime);
+      if (timeDiff < smallestTimeDiff) {
+        smallestTimeDiff = timeDiff;
+        selectedDir = dir;
+      }
+      // If directory name includes file_pair_id, prioritize it
+      if (dir.name.includes(file_pair_id)) {
+        selectedDir = dir;
+        break;
+      }
+    }
+    
+    const dirName = selectedDir.name;
     
     try {
       // Update the database record
@@ -106,12 +127,4 @@ async function fixScreenshotsDirs() {
   console.log(`Deleted ${deletedCount} orphaned analyses`);
 }
 
-fixScreenshotsDirs()
-  .then(() => {
-    console.log('Script completed successfully');
-    process.exit(0);
-  })
-  .catch(error => {
-    console.error('Script failed:', error);
-    process.exit(1);
-  }); 
+fixScreenshotsDirs().catch(console.error); 

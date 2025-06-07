@@ -7,6 +7,7 @@ import {
 } from '@/types';
 import VerticalRetentionTimeline from './VerticalRetentionTimeline';
 import CustomPromptForm from './CustomPromptForm';
+import LlmLogsView from './LlmLogsView';
 
 interface ComprehensiveAnalysisViewProps {
   analysis: ComprehensiveVideoAnalysis;
@@ -124,6 +125,15 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({
             />
           </div>
         )}
+      </div>
+      
+      {/* LLM Logs */}
+      <div className="bg-white rounded-lg shadow border p-6">
+        <h3 className="text-xl font-thin mb-4 flex items-center text-gray-900">
+          <span className="w-3 h-3 bg-blue-500 rounded-full mr-2"></span>
+          Логи LLM
+        </h3>
+        <LlmLogsView filePairId={filePairId} />
       </div>
 
       {/* 1. Аудио блоки */}

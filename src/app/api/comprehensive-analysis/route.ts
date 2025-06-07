@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
     
     // Generate screenshots for visual analysis
     console.log("Generating screenshots for visual analysis");
-    const screenshotsDir = `${Date.now()}`;
+    const screenshotsDir = filePairId;
     const screenshotsPath = path.join(process.cwd(), 'public', 'uploads', sessionId, 'screenshots', screenshotsDir);
     
     // Create the screenshots directory if it doesn't exist
@@ -131,7 +131,8 @@ export async function POST(request: NextRequest) {
     const visualAnalysis = await analyzeVisualScreenshots({
       screenshotsDir,
       sessionId,
-      step
+      step,
+      filePairId
     });
     
     console.log("Visual analysis completed");

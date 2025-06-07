@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 export async function POST(request: NextRequest) {
   try {
-    const { videoPath, sessionId, duration } = await request.json();
+    const { videoPath, sessionId, duration, filePairId } = await request.json();
     
     if (!videoPath || !sessionId || !duration) {
       return NextResponse.json({ 
@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    const screenshotsId = uuidv4();
+    const screenshotsId = filePairId;
     const outputDir = path.join(process.cwd(), 'public', 'uploads', sessionId, 'screenshots', screenshotsId);
     
     if (!fs.existsSync(outputDir)) {

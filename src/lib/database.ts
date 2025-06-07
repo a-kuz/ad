@@ -12,6 +12,7 @@ import {
 } from '@/types';
 import fs from 'fs';
 import { connectToDatabase } from './connectToDatabase';
+import { Field } from 'formik';
 
 // Database functions are moved to connectToDatabase.ts
 
@@ -212,7 +213,7 @@ export async function getVideoAnalysis(filePairId: string): Promise<VideoAnalysi
 export async function saveComprehensiveAnalysis(filePairId: string, analysis: ComprehensiveVideoAnalysis): Promise<string> {
   const { db } = await connectToDatabase();
   
-  const id = uuidv4();
+  const id = filePairId;
   const createdAt = new Date().toISOString();
   
   // Convert objects to JSON strings
@@ -599,7 +600,6 @@ export async function getScreenshotFilesForFilePair(filePairId: string) {
     const uploadsPath = path.join('uploads', sessionId);
     const screenshotsBasePath = path.join(uploadsPath, 'screenshots');
     
-    // List all available screenshot directories
     const publicDir = path.join(process.cwd(), 'public');
     const screenshotsFullPath = path.join(publicDir, screenshotsBasePath);
     
@@ -617,81 +617,56 @@ export async function getScreenshotFilesForFilePair(filePairId: string) {
       dirName = screenshotsDir;
       
       if (!fs.existsSync(targetDir)) {
-        console.warn(`Specific screenshots directory not found: ${targetDir}, falling back to latest`);
-        screenshotsDir = null; // Fall back to latest directory
+        console.warn(`Specific screenshots directory not found: ${targetDir}`);
+        // Try to find a directory matching filePairId
+        const screenshotDirs = fs.readdirSync(screenshotsFullPath)
+          .map(dir => path.join(screenshotsFullPath, dir))
+          .filter(dir => fs.existsSync(dir) && fs.statSync(dir).isDirectory());
+        
+        const matchingDir = screenshotDirs.find(dir => path.basename(dir) === filePairId);
+        if (matchingDir) {
+          targetDir = matchingDir;
+          dirName = path.basename(matchingDir);
+          console.log(`Found directory matching filePairId: ${targetDir}`);
+        } else {
+          console.warn(`No directory matching filePairId found for: ${filePairId}`);
+          return [];
+        }
       } else {
         console.log(`Using specific screenshots directory from database: ${targetDir}`);
       }
-    }
-    
-    if (!screenshotsDir) {
-      // Fall back to finding the most recent directory
+    } else {
+      console.warn(`No screenshots_dir found in database for filePairId: ${filePairId}`);
+      // Try to find a directory matching filePairId
       const screenshotDirs = fs.readdirSync(screenshotsFullPath)
         .map(dir => path.join(screenshotsFullPath, dir))
-        .filter(dir => fs.existsSync(dir) && fs.statSync(dir).isDirectory())
-        .sort((a, b) => fs.statSync(b).mtime.getTime() - fs.statSync(a).mtime.getTime()); // Sort by newest first
+        .filter(dir => fs.existsSync(dir) && fs.statSync(dir).isDirectory());
       
-      if (screenshotDirs.length === 0) {
-        console.error(`No screenshot directories found in ${screenshotsFullPath}`);
+      const matchingDir = screenshotDirs.find(dir => path.basename(dir) === filePairId);
+      if (matchingDir) {
+        targetDir = matchingDir;
+        dirName = path.basename(matchingDir);
+        console.log(`Found directory matching filePairId: ${targetDir}`);
+      } else {
+        console.warn(`No directory matching filePairId found for: ${filePairId}`);
         return [];
-      }
-      
-      // Use the most recent directory
-      targetDir = screenshotDirs[0];
-      dirName = path.basename(targetDir);
-      console.log(`Using latest screenshots directory: ${targetDir}`);
-      
-      // Update the database with the latest directory if we have an analysis ID
-      if (analysisId) {
-        try {
-          // Update screenshots_dir field
-          await db.run(`
-            UPDATE comprehensive_analyses 
-            SET screenshots_dir = ? 
-            WHERE id = ?
-          `, [dirName, analysisId]);
-          
-          // Also update the visual_analysis JSON
-          const visualAnalysisRecord = await db.get(`
-            SELECT visual_analysis FROM comprehensive_analyses WHERE id = ?
-          `, [analysisId]);
-          
-          if (visualAnalysisRecord && visualAnalysisRecord.visual_analysis) {
-            try {
-              const visualAnalysis = JSON.parse(visualAnalysisRecord.visual_analysis);
-              visualAnalysis.screenshotsDir = dirName;
-              
-              await db.run(`
-                UPDATE comprehensive_analyses
-                SET visual_analysis = ?
-                WHERE id = ?
-              `, [JSON.stringify(visualAnalysis), analysisId]);
-              
-              console.log(`Updated database with latest screenshots directory: ${dirName} for analysis: ${analysisId}`);
-            } catch (e) {
-              console.warn(`Failed to update visual_analysis JSON: ${e}`);
-            }
-          }
-        } catch (updateError) {
-          console.warn(`Failed to update screenshots_dir in database: ${updateError}`);
-        }
       }
     }
     
-    // Get all screenshots from this directory
+    // Get all screenshot files in the target directory
     const screenshotFiles = fs.readdirSync(targetDir)
       .filter(file => file.endsWith('.jpg'))
       .map(file => path.join(screenshotsBasePath, dirName, file))
       .sort((a, b) => {
-        // Extract timestamp from filename (e.g., "screenshot_10.5s.jpg" -> 10.5)
         const timeA = parseFloat(a.match(/screenshot_(\d+\.?\d*)s\.jpg$/)?.[1] || '0');
         const timeB = parseFloat(b.match(/screenshot_(\d+\.?\d*)s\.jpg$/)?.[1] || '0');
         return timeA - timeB;
       });
     
+    console.log(`Found ${screenshotFiles.length} screenshots for filePairId: ${filePairId} in directory: ${targetDir}`);
     return screenshotFiles;
   } catch (error) {
-    console.error('Error getting screenshot files:', error);
+    console.error(`Error getting screenshot files for filePairId: ${filePairId}`, error);
     return [];
   }
 }

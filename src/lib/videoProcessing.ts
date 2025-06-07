@@ -9,7 +9,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-export async function extractScreenshots(videoPath: string, sessionId: string, duration: number): Promise<string[]> {
+export async function extractScreenshots(videoPath: string, sessionId: string, duration: number, filePairId?: string): Promise<string[]> {
   return new Promise(async (resolve, reject) => {
     console.log('=== SCREENSHOT EXTRACTION START ===');
     console.log('Input video path:', videoPath);
@@ -23,7 +23,7 @@ export async function extractScreenshots(videoPath: string, sessionId: string, d
       return;
     }
     
-    const screenshotsId = uuidv4();
+    const screenshotsId = filePairId || uuidv4();
     const outputDir = path.join(process.cwd(), 'public', 'uploads', sessionId, 'screenshots', screenshotsId);
     
     if (!fs.existsSync(outputDir)) {
@@ -138,66 +138,88 @@ export async function analyzeTextInScreenshots(screenshots: string[], step: numb
 
   // Анализируем по батчам, чтобы не перегружать API
   const batchSize = 5;
+  const batches = [];
   for (let i = 0; i < screenshots.length; i += batchSize) {
     const batch = screenshots.slice(i, i + batchSize);
-    console.log(`Processing text analysis batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(screenshots.length/batchSize)}`);
+    batches.push({ batch, startIndex: i });
+  }
+
+  console.log(`Processing ${batches.length} batches for text analysis`);
+
+  // Process multiple batches in parallel
+  const parallelBatchCount = 3; // Adjust based on API rate limits and system capabilities
+  const parallelBatches = [];
+  for (let i = 0; i < batches.length; i += parallelBatchCount) {
+    const parallelBatch = batches.slice(i, i + parallelBatchCount);
+    parallelBatches.push(parallelBatch);
+  }
+
+  for (let pbIndex = 0; pbIndex < parallelBatches.length; pbIndex++) {
+    const currentParallelBatch = parallelBatches[pbIndex];
+    console.log(`Processing parallel batch group ${pbIndex + 1}/${parallelBatches.length}`);
     
-    const batchPromises = batch.map(async (screenshotPath, batchIndex) => {
-      const globalIndex = i + batchIndex;
-      const timestamp = globalIndex * step;
-      
-      try {
-        if (!fs.existsSync(screenshotPath)) {
-          console.warn(`Screenshot not found: ${screenshotPath}`);
+    const batchPromises = currentParallelBatch.map(async ({ batch, startIndex }) => {
+      console.log(`Processing text analysis batch ${Math.floor(startIndex/batchSize) + 1}/${Math.ceil(screenshots.length/batchSize)}`);
+      const batchResults = await Promise.all(batch.map(async (screenshotPath, batchIndex) => {
+        const globalIndex = startIndex + batchIndex;
+        const timestamp = globalIndex * step;
+        
+        try {
+          if (!fs.existsSync(screenshotPath)) {
+            console.warn(`Screenshot not found: ${screenshotPath}`);
+            return { timestamp, text: '', confidence: 0 };
+          }
+
+          const imageBuffer = fs.readFileSync(screenshotPath);
+          const base64Image = imageBuffer.toString('base64');
+
+          const response = await openai.chat.completions.create({
+            model: "gpt-4.1-mini",
+            messages: [
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "text",
+                    text: `Извлеки ВЕСЬ видимый текст с этого скриншота. Верни ТОЛЬКО текст, который ты видишь. Если текста нет, верни "НЕТ_ТЕКСТА".`
+                  },
+                  {
+                    type: "image_url",
+                    image_url: {
+                      url: `data:image/jpeg;base64,${base64Image}`
+                    }
+                  }
+                ]
+              }
+            ],
+            max_tokens: 1000,
+            temperature: 0.1
+          });
+
+          const extractedText = response.choices[0].message.content?.trim() || '';
+          
+          return {
+            timestamp,
+            text: extractedText === 'НЕТ_ТЕКСТА' ? '' : extractedText,
+            confidence: 0.9
+          };
+
+        } catch (error) {
+          console.error(`Error analyzing text in screenshot at ${timestamp}s:`, error);
           return { timestamp, text: '', confidence: 0 };
         }
-
-        const imageBuffer = fs.readFileSync(screenshotPath);
-        const base64Image = imageBuffer.toString('base64');
-
-        const response = await openai.chat.completions.create({
-          model: "gpt-4.1-mini",
-          messages: [
-            {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: `Извлеки ВЕСЬ видимый текст с этого скриншота. Верни ТОЛЬКО текст, который ты видишь. Если текста нет, верни "НЕТ_ТЕКСТА".`
-                },
-                {
-                  type: "image_url",
-                  image_url: {
-                    url: `data:image/jpeg;base64,${base64Image}`
-                  }
-                }
-              ]
-            }
-          ],
-          max_tokens: 1000,
-          temperature: 0.1
-        });
-
-        const extractedText = response.choices[0].message.content?.trim() || '';
-        
-        return {
-          timestamp,
-          text: extractedText === 'НЕТ_ТЕКСТА' ? '' : extractedText,
-          confidence: 0.9
-        };
-
-      } catch (error) {
-        console.error(`Error analyzing text in screenshot at ${timestamp}s:`, error);
-        return { timestamp, text: '', confidence: 0 };
-      }
+      }));
+      return batchResults;
     });
 
-    const batchResults = await Promise.all(batchPromises);
-    textAnalysis.push(...batchResults);
+    const parallelResults = await Promise.all(batchPromises);
+    parallelResults.forEach(batchResults => {
+      textAnalysis.push(...batchResults);
+    });
     
-    // Небольшая пауза между батчами
-    if (i + batchSize < screenshots.length) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+    // Небольшая пауза между группами параллельных батчей
+    if (pbIndex + 1 < parallelBatches.length) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
   }
 

@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build",
+    "dev": "mkdir -p public/logs/llm && next dev --turbopack",
+    "build": "mkdir -p public/logs/llm && next build",
     "start": "next start",
     "lint": "next lint"
   },
@@ -17,6 +17,7 @@
     "form-data": "^4.0.3",
     "formidable": "^3.5.4",
     "formik": "^2.4.6",
+    "mkdirp": "^3.0.1",
     "next": "15.3.3",
     "openai": "^5.1.1",
     "react": "^19.0.0",

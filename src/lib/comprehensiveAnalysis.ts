@@ -98,28 +98,36 @@ export async function performComprehensiveAnalysis(
     // 3. Извлечение скриншотов
     await logger.startStep('SCREENSHOTS', 'Извлечение скриншотов из видео');
     console.log('Step 3: Extracting screenshots...');
-    const screenshots = await extractScreenshots(absoluteVideoPath, sessionId, videoMetadata.duration);
+    const screenshots = await extractScreenshots(absoluteVideoPath, sessionId, videoMetadata.duration, filePairId);
     await logger.completeStep(`Извлечено ${screenshots.length} скриншотов`, { 
       screenshots: screenshots.length 
     });
     
-    // 4. Анализ текста на скриншотах
-    await logger.startStep('TEXT_ANALYSIS', 'Анализ текста на скриншотах');
-    console.log('Step 4: Analyzing text in screenshots...');
-    await logger.updateStep('Обработка скриншотов для поиска текста...', { progress: 20 });
-    const textualVisualAnalysis = await analyzeTextInScreenshots(screenshots, 0.5);
-    await logger.completeStep(`Найдено ${textualVisualAnalysis.groups.length} текстовых блоков`, {
-      textBlocks: textualVisualAnalysis.groups.length
-    });
-    
-    // 5. Визуальный анализ скриншотов
-    await logger.startStep('VISUAL_ANALYSIS', 'Анализ визуального контента');
-    console.log('Step 5: Analyzing visual content...');
-    await logger.updateStep('Анализ визуальных элементов...', { progress: 30 });
-    const visualAnalysis = await analyzeVisualContent(screenshots, 0.5);
-    await logger.completeStep(`Найдено ${visualAnalysis.groups.length} визуальных блоков`, {
-      visualBlocks: visualAnalysis.groups.length
-    });
+    // 4. и 5. Анализ текста и визуального контента параллельно
+    await logger.startStep('TEXT_AND_VISUAL_ANALYSIS', 'Анализ текста и визуального контента');
+    console.log('Step 4 & 5: Analyzing text and visual content in parallel...');
+    await logger.updateStep('Обработка скриншотов для анализа текста и визуального контента...', { progress: 20 });
+
+    const [textualVisualAnalysis, visualAnalysis] = await Promise.all([
+      (async () => {
+        await logger.startStep('TEXT_ANALYSIS', 'Анализ текста на скриншотах');
+        const textResult = await analyzeTextInScreenshots(screenshots, 0.5);
+        await logger.completeStep(`Найдено ${textResult.groups.length} текстовых блоков`, {
+          textBlocks: textResult.groups.length
+        });
+        return textResult;
+      })(),
+      (async () => {
+        await logger.startStep('VISUAL_ANALYSIS', 'Анализ визуального контента');
+        const visualResult = await analyzeVisualContent(screenshots, 0.5);
+        await logger.completeStep(`Найдено ${visualResult.groups.length} визуальных блоков`, {
+          visualBlocks: visualResult.groups.length
+        });
+        return visualResult;
+      })()
+    ]);
+
+    await logger.completeStep(`Анализ завершен: ${textualVisualAnalysis.groups.length} текстовых и ${visualAnalysis.groups.length} визуальных блоков`, { progress: 50 });
     
     // 6. Сопоставление блоков с отвалами
     await logger.startStep('BLOCK_DROPOUT', 'Анализ отвалов по блокам');

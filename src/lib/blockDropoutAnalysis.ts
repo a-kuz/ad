@@ -1,7 +1,9 @@
 import { ComprehensiveVideoAnalysis, VisualAnalysis, AudioAnalysis, TextualVisualAnalysis, DropoutCurve, ContentBlock, BlockDropoutAnalysis } from '@/types';
 import OpenAI from 'openai';
+import { createLoggingOpenAI } from './llmLogger';
 
-const openai = new OpenAI({
+// Default OpenAI client, will be replaced with logging client when needed
+let openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
@@ -33,13 +35,23 @@ export async function analyzeBlockDropouts({
   dropoutCurve,
   audioAnalysis,
   textualVisualAnalysis,
-  visualAnalysis
+  visualAnalysis,
+  filePairId
 }: {
   dropoutCurve: DropoutCurve;
   audioAnalysis: AudioAnalysis;
   textualVisualAnalysis?: TextualVisualAnalysis;
   visualAnalysis: VisualAnalysis;
+  filePairId?: string;
 }): Promise<ComprehensiveVideoAnalysis> {
+  // Set up logging OpenAI client if filePairId is provided
+  let llmLogger;
+  if (filePairId) {
+    console.log(`Setting up LLM logging for blockDropoutAnalysis with filePairId: ${filePairId}`);
+    const loggingClient = createLoggingOpenAI(filePairId);
+    openai = loggingClient.openai;
+    llmLogger = loggingClient.logger;
+  }
   // Combine all content blocks from different analysis types
   const allBlocks: ContentBlock[] = [
     ...(audioAnalysis?.groups || []),
@@ -206,6 +218,16 @@ export async function analyzeBlockDropouts({
       dropoutPercentage: Math.round((100 - endRetention) * 100) / 100
     };
   });
+
+  // Save the LLM logs to a file if we have a logger
+  if (llmLogger && llmLogger.getLogCount() > 0) {
+    try {
+      const logFilePath = await llmLogger.saveToFile();
+      console.log(`LLM prompts and responses saved to: ${logFilePath}`);
+    } catch (logError) {
+      console.error('Error saving LLM logs:', logError);
+    }
+  }
 
   // Return the comprehensive analysis with the updated blocks and dropout analysis
   return {
