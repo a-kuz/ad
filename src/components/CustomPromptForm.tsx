@@ -14,7 +14,7 @@ const AI_MODELS = [
   { value: "gpt-4.1-mini", label: "GPT-4.1 Mini" },
   { value: "gpt-4.1", label: "GPT-4.1" },
   { value: "gpt-4o", label: "GPT-4o" },
-  { value: "gpt-4o-mini", label: "GPT-4o Mini" },
+  { value: "gpt-4.1-mini", label: "GPT-4o Mini" },
   { value: "o3", label: "Claude 3 Opus (o3)" }
 ];
 

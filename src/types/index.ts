@@ -182,4 +182,5 @@ export interface ComprehensiveVideoAnalysis {
   visualAnalysis?: VisualAnalysis;
   contentBlocks?: ContentBlock[];
   blockDropoutAnalysis?: BlockDropoutAnalysis[];
+  visualBlocksAnalysisTable?: string; // Markdown таблица анализа блоков
 } 

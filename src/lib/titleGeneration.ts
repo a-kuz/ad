@@ -30,7 +30,7 @@ export async function generatePairTitle(analysisResult: ComprehensiveVideoAnalys
 Название (только текст, без кавычек):`;
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4.1-mini",
       messages: [
         {
           role: "user",

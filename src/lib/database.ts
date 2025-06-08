@@ -1,6 +1,6 @@
 import sqlite3 from 'sqlite3';
 import { Database } from 'sqlite';
-import path from 'path';
+
 import { v4 as uuidv4 } from 'uuid';
 import { 
   UserSession, 
@@ -13,6 +13,9 @@ import {
 import fs from 'fs';
 import { connectToDatabase } from './connectToDatabase';
 import { Field } from 'formik';
+import { promises as fsPromises } from 'fs';
+import path from 'path';
+
 
 // Database functions are moved to connectToDatabase.ts
 
@@ -223,6 +226,7 @@ export async function saveComprehensiveAnalysis(filePairId: string, analysis: Co
   const visualAnalysis = JSON.stringify(analysis.visualAnalysis);
   const blockDropoutAnalysis = JSON.stringify(analysis.blockDropoutAnalysis || []);
   const timelineAlignment = JSON.stringify([]);  // Legacy field, now empty
+  const visualBlocksAnalysisTable = analysis.visualBlocksAnalysisTable || null;
   
   // Extract screenshotsDir from visualAnalysis
   let screenshotsDir = null;
@@ -248,6 +252,7 @@ export async function saveComprehensiveAnalysis(filePairId: string, analysis: Co
         block_dropout_analysis = ?,
         timeline_alignment = ?,
         screenshots_dir = ?,
+        visual_blocks_analysis_table = ?,
         created_at = ?
       WHERE file_pair_id = ?
     `, [
@@ -258,6 +263,7 @@ export async function saveComprehensiveAnalysis(filePairId: string, analysis: Co
       blockDropoutAnalysis,
       timelineAlignment,
       screenshotsDir,
+      visualBlocksAnalysisTable,
       createdAt,
       filePairId
     ]);
@@ -268,8 +274,8 @@ export async function saveComprehensiveAnalysis(filePairId: string, analysis: Co
     await db.run(`
       INSERT INTO comprehensive_analyses (
         id, file_pair_id, dropout_curve, audio_analysis, textual_visual_analysis, 
-        visual_analysis, block_dropout_analysis, timeline_alignment, screenshots_dir, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        visual_analysis, block_dropout_analysis, timeline_alignment, screenshots_dir, visual_blocks_analysis_table, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       id,
       filePairId,
@@ -280,6 +286,7 @@ export async function saveComprehensiveAnalysis(filePairId: string, analysis: Co
       blockDropoutAnalysis,
       timelineAlignment,
       screenshotsDir,
+      visualBlocksAnalysisTable,
       createdAt
     ]);
     
@@ -307,6 +314,7 @@ export async function getComprehensiveAnalysis(filePairId: string): Promise<Comp
       : undefined;
     const visualAnalysis = JSON.parse(analysis.visual_analysis);
     const blockDropoutAnalysis = JSON.parse(analysis.block_dropout_analysis);
+    let visualBlocksAnalysisTable = analysis.visual_blocks_analysis_table || undefined;
     
     // If screenshotsDir is stored in the database, ensure it's also set in the visualAnalysis object
     if (analysis.screenshots_dir && visualAnalysis) {
@@ -314,12 +322,50 @@ export async function getComprehensiveAnalysis(filePairId: string): Promise<Comp
       console.log(`Added screenshotsDir from database: ${analysis.screenshots_dir} to visualAnalysis`);
     }
     
+    // Если таблица анализа блоков пустая, генерируем её
+    if (!visualBlocksAnalysisTable && blockDropoutAnalysis && blockDropoutAnalysis.length > 0) {
+      console.log('Generating missing visualBlocksAnalysisTable for filePairId:', filePairId);
+      
+      try {
+        // Импортируем функцию генерации таблицы
+        const { generateVisualBlocksAnalysisTable } = await import('./comprehensiveAnalysis');
+        
+        // Собираем все блоки
+        const allBlocks = [
+          ...(audioAnalysis?.groups || []),
+          ...(textualVisualAnalysis?.groups || []),
+          ...(visualAnalysis?.groups || [])
+        ];
+        
+        if (allBlocks.length > 0) {
+          visualBlocksAnalysisTable = await generateVisualBlocksAnalysisTable(
+            allBlocks,
+            blockDropoutAnalysis,
+            filePairId
+          );
+          
+          // Сохраняем сгенерированную таблицу в базу данных
+          await db.run(`
+            UPDATE comprehensive_analyses 
+            SET visual_blocks_analysis_table = ? 
+            WHERE file_pair_id = ?
+          `, [visualBlocksAnalysisTable, filePairId]);
+          
+          console.log('Generated and saved visualBlocksAnalysisTable for filePairId:', filePairId);
+        }
+      } catch (error) {
+        console.error('Error generating visualBlocksAnalysisTable:', error);
+        // Продолжаем работу без таблицы, если генерация не удалась
+      }
+    }
+    
     return {
       dropoutCurve,
       audioAnalysis,
       textualVisualAnalysis,
       visualAnalysis,
-      blockDropoutAnalysis
+      blockDropoutAnalysis,
+      visualBlocksAnalysisTable
     };
   } catch (error) {
     console.error('Error parsing comprehensive analysis:', error);
@@ -344,7 +390,189 @@ export async function getAllSessions(): Promise<UserSession[]> {
 
 export async function deleteSession(sessionId: string): Promise<void> {
   const { db } = await connectToDatabase();
+  
+  // Сначала получаем все файлы сессии для удаления
+  const session = await getSession(sessionId);
+  if (session) {
+    // Удаляем файлы для каждой пары
+    for (const filePair of session.filePairs) {
+      await deleteFilePairFiles(sessionId, filePair.id);
+    }
+    
+    // Удаляем папку сессии целиком
+    try {
+      const sessionDir = path.join(process.cwd(), 'public', 'uploads', sessionId);
+      await fsPromises.rmdir(sessionDir, { recursive: true });
+      console.log(`Deleted session directory: ${sessionDir}`);
+    } catch (error) {
+      console.warn(`Failed to delete session directory for ${sessionId}:`, error);
+    }
+  }
+  
+  // Удаляем из базы данных (CASCADE удалит связанные записи)
   await db.run('DELETE FROM sessions WHERE id = ?', [sessionId]);
+}
+
+export async function deleteFilePair(sessionId: string, filePairId: string): Promise<void> {
+  const { db } = await connectToDatabase();
+  
+  // Удаляем файлы
+  await deleteFilePairFiles(sessionId, filePairId);
+  
+  // Удаляем из базы данных (CASCADE удалит связанные записи)
+  await db.run('DELETE FROM file_pairs WHERE id = ?', [filePairId]);
+}
+
+export async function deleteFilePairFiles(sessionId: string, filePairId: string): Promise<void> {
+  try {
+    const session = await getSession(sessionId);
+    if (!session) return;
+    
+    const filePair = session.filePairs.find(fp => fp.id === filePairId);
+    if (!filePair) return;
+    
+    // Удаляем основные файлы (видео и график)
+    const filesToDelete = [];
+    
+    if (filePair.videoPath) {
+      const videoPath = path.join(process.cwd(), 'public', filePair.videoPath);
+      filesToDelete.push(videoPath);
+    }
+    
+    if (filePair.graphPath) {
+      const graphPath = path.join(process.cwd(), 'public', filePair.graphPath);
+      filesToDelete.push(graphPath);
+    }
+    
+    // Удаляем миниатюру, если есть
+    if (filePair.videoMetadata?.thumbnailPath) {
+      const thumbnailPath = path.join(process.cwd(), 'public', filePair.videoMetadata.thumbnailPath);
+      filesToDelete.push(thumbnailPath);
+    }
+    
+    // Удаляем основные файлы
+    for (const filePath of filesToDelete) {
+      try {
+        await fsPromises.unlink(filePath);
+        console.log(`Deleted file: ${filePath}`);
+      } catch (error) {
+        console.warn(`Failed to delete file ${filePath}:`, error);
+      }
+    }
+    
+    // Удаляем папку со скриншотами
+    const screenshotsDir = path.join(process.cwd(), 'public', 'uploads', sessionId, 'screenshots', filePairId);
+    try {
+      await fsPromises.rmdir(screenshotsDir, { recursive: true });
+      console.log(`Deleted screenshots directory: ${screenshotsDir}`);
+    } catch (error) {
+      console.warn(`Failed to delete screenshots directory ${screenshotsDir}:`, error);
+    }
+    
+    // Удаляем папку с аудио файлами
+    const audioDir = path.join(process.cwd(), 'public', 'uploads', sessionId, 'audio', filePairId);
+    try {
+      await fsPromises.rmdir(audioDir, { recursive: true });
+      console.log(`Deleted audio directory: ${audioDir}`);
+    } catch (error) {
+      console.warn(`Failed to delete audio directory ${audioDir}:`, error);
+    }
+    
+  } catch (error) {
+    console.error(`Error deleting files for filePair ${filePairId}:`, error);
+    throw error;
+  }
+}
+
+export async function cleanupPublicFiles(): Promise<{
+  deletedFiles: string[];
+  deletedDirectories: string[];
+  errors: string[];
+}> {
+  const result = {
+    deletedFiles: [] as string[],
+    deletedDirectories: [] as string[],
+    errors: [] as string[]
+  };
+  
+  try {
+    const { db } = await connectToDatabase();
+    
+    // Получаем все активные сессии
+    const activeSessions = await db.all('SELECT id FROM sessions');
+    const activeSessionIds = new Set(activeSessions.map(s => s.id));
+    
+    // Получаем все файлы из базы
+    const activeFiles = await db.all('SELECT video_path, graph_path FROM file_pairs WHERE video_path IS NOT NULL OR graph_path IS NOT NULL');
+    const activeFilePaths = new Set();
+    activeFiles.forEach(file => {
+      if (file.video_path) activeFilePaths.add(file.video_path);
+      if (file.graph_path) activeFilePaths.add(file.graph_path);
+    });
+    
+    // Получаем все миниатюры из базы
+    const activeThumbnails = await db.all('SELECT thumbnail_path FROM video_metadata WHERE thumbnail_path IS NOT NULL');
+    activeThumbnails.forEach(thumb => {
+      if (thumb.thumbnail_path) activeFilePaths.add(thumb.thumbnail_path);
+    });
+    
+    const publicDir = path.join(process.cwd(), 'public');
+    
+    // Проверяем основные файлы в uploads/videos и uploads/graphs
+    const checkDirectories = ['uploads/videos', 'uploads/graphs', 'uploads/thumbnails'];
+    
+    for (const dir of checkDirectories) {
+      const fullDirPath = path.join(publicDir, dir);
+      try {
+        const files = await fsPromises.readdir(fullDirPath);
+        for (const file of files) {
+          const filePath = path.join(dir, file);
+          const fullFilePath = path.join(publicDir, filePath);
+          
+          if (!activeFilePaths.has(filePath)) {
+            try {
+              await fsPromises.unlink(fullFilePath);
+              result.deletedFiles.push(filePath);
+            } catch (error) {
+              result.errors.push(`Failed to delete ${filePath}: ${error}`);
+            }
+          }
+        }
+      } catch (error) {
+        result.errors.push(`Failed to read directory ${dir}: ${error}`);
+      }
+    }
+    
+    // Проверяем папки сессий в uploads/
+    const uploadsDir = path.join(publicDir, 'uploads');
+    try {
+      const items = await fsPromises.readdir(uploadsDir);
+      for (const item of items) {
+        // Пропускаем стандартные папки
+        if (['videos', 'graphs', 'thumbnails'].includes(item)) continue;
+        
+        const itemPath = path.join(uploadsDir, item);
+        const stat = await fsPromises.lstat(itemPath);
+        
+        if (stat.isDirectory() && !activeSessionIds.has(item)) {
+          // Это папка неактивной сессии
+          try {
+            await fsPromises.rmdir(itemPath, { recursive: true });
+            result.deletedDirectories.push(`uploads/${item}`);
+          } catch (error) {
+            result.errors.push(`Failed to delete directory uploads/${item}: ${error}`);
+          }
+        }
+      }
+    } catch (error) {
+      result.errors.push(`Failed to read uploads directory: ${error}`);
+    }
+    
+  } catch (error) {
+    result.errors.push(`Database error: ${error}`);
+  }
+  
+  return result;
 }
 
 export async function updateVideoMetadata(filePairId: string, metadata: VideoMetadata): Promise<void> {
@@ -709,7 +937,8 @@ export async function updateVisualAnalysisForFilePair(filePairId: string, visual
         ? JSON.parse(existingAnalysis.textual_visual_analysis) 
         : undefined,
       visualAnalysis: visualAnalysis,
-      blockDropoutAnalysis: JSON.parse(existingAnalysis.block_dropout_analysis)
+      blockDropoutAnalysis: JSON.parse(existingAnalysis.block_dropout_analysis),
+      visualBlocksAnalysisTable: existingAnalysis.visual_blocks_analysis_table || undefined
     };
     
     // Save the updated analysis

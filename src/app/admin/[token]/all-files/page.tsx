@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { UploadedFilePair } from '@/types';
 import { isValidAdminToken } from '@/lib/admin';
-import { FiFileText, FiVideo, FiImage, FiDownload, FiCalendar, FiDatabase, FiArrowLeft, FiRefreshCw } from 'react-icons/fi';
+import { FiFileText, FiVideo, FiImage, FiDownload, FiCalendar, FiDatabase, FiArrowLeft, FiRefreshCw, FiTrash2 } from 'react-icons/fi';
 
 interface AllFile extends UploadedFilePair {
   sessionId: string;
@@ -35,6 +35,56 @@ export default function AllFilesPage() {
       setError('Ошибка подключения к серверу');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const deleteFilePairHandler = async (sessionId: string, filePairId: string, fileName: string) => {
+    if (!confirm(`Вы уверены, что хотите удалить файловую пару "${fileName}"? Это также удалит все связанные файлы (видео, графики, скриншоты).`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/admin/sessions/${sessionId}/${filePairId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        fetchData(); // Refresh data
+      } else {
+        alert('Ошибка при удалении файловой пары');
+      }
+    } catch {
+      alert('Ошибка при удалении файловой пары');
+    }
+  };
+
+  const cleanupFilesHandler = async () => {
+    if (!confirm('Вы уверены, что хотите очистить все неиспользуемые файлы? Это действие необратимо.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/admin/cleanup-files', {
+        method: 'POST',
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        
+        let message = 'Очистка завершена:\n';
+        message += `Удалено файлов: ${result.deletedFiles?.length || 0}\n`;
+        message += `Удалено папок: ${result.deletedDirectories?.length || 0}\n`;
+        if (result.errors?.length > 0) {
+          message += `Ошибок: ${result.errors.length}`;
+        }
+        
+        alert(message);
+        fetchData(); // Refresh data
+      } else {
+        alert('Ошибка при очистке файлов');
+      }
+    } catch {
+      alert('Ошибка при очистке файлов');
     }
   };
 
@@ -95,14 +145,23 @@ export default function AllFilesPage() {
     <main className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
-           <div className="flex items-center space-x-4">
-              <h1 className="text-3xl font-bold text-gray-900">Все загруженные файлы</h1>
-              <a
-                href={`/admin/${token}`}
-                className="inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+           <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <h1 className="text-3xl font-bold text-gray-900">Все загруженные файлы</h1>
+                <a
+                  href={`/admin/${token}`}
+                  className="inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                >
+                  <FiArrowLeft className="mr-2"/> К статистике
+                </a>
+              </div>
+              <button
+                onClick={cleanupFilesHandler}
+                className="inline-flex items-center px-3 py-1 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-red-50 hover:bg-red-100"
               >
-                <FiArrowLeft className="mr-2"/> К статистике
-              </a>
+                <FiTrash2 className="mr-2" />
+                Очистить файлы
+              </button>
             </div>
           <p className="text-gray-600 mt-2">Список всех загруженных видео и графиков</p>
         </div>
@@ -148,12 +207,12 @@ export default function AllFilesPage() {
                          <span>{new Date(file.uploadedAt).toLocaleString('ru-RU')}</span>
                       </div>
                     </div>
-                    <div className="ml-4 flex-shrink-0">
+                    <div className="ml-4 flex-shrink-0 flex items-center gap-2">
                        {file.videoName && (
                            <a
                                 href={`/uploads/videos/${file.videoPath.split('/').pop()}`}
                                 download
-                                className="inline-flex items-center px-3 py-1 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 mr-2"
+                                className="inline-flex items-center px-3 py-1 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50"
                             >
                                 <FiDownload className="mr-1" /> Видео
                             </a>
@@ -167,6 +226,13 @@ export default function AllFilesPage() {
                                 <FiDownload className="mr-1" /> График
                             </a>
                        )}
+                       <button
+                         onClick={() => deleteFilePairHandler(file.sessionId, file.id, file.videoName || file.graphName || 'Файл')}
+                         className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+                         title="Удалить файловую пару"
+                       >
+                         <FiTrash2 className="h-3 w-3" />
+                       </button>
                     </div>
                   </div>
                 </li>

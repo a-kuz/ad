@@ -148,4 +148,14 @@ async function initializeSchema() {
       console.warn('Migration warning:', error.message);
     }
   }
+
+  // Migration: Add visual_blocks_analysis_table column to comprehensive_analyses if it doesn't exist
+  try {
+    await db.exec(`ALTER TABLE comprehensive_analyses ADD COLUMN visual_blocks_analysis_table TEXT;`);
+  } catch (error: any) {
+    // Column already exists or other error - ignore if it's a "duplicate column" error
+    if (!error.message.includes('duplicate column name')) {
+      console.warn('Migration warning:', error.message);
+    }
+  }
 } 

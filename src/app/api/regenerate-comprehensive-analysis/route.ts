@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { analyzeVisualScreenshots } from '@/lib/visualAnalysis';
 import { analyzeBlockDropouts } from '@/lib/blockDropoutAnalysis';
+import { generateVisualBlocksAnalysisTable } from '@/lib/comprehensiveAnalysis';
 
 export async function POST(request: NextRequest) {
   try {
@@ -136,13 +137,33 @@ export async function POST(request: NextRequest) {
 
     console.log('Block dropout analysis completed successfully');
 
+    // Generate visual blocks analysis table
+    console.log('Generating visual blocks analysis table...');
+    const allBlocks = [
+      ...(updatedAnalysis.audioAnalysis?.groups || []),
+      ...(updatedAnalysis.textualVisualAnalysis?.groups || []),
+      ...(updatedAnalysis.visualAnalysis?.groups || [])
+    ];
+    
+    const visualBlocksAnalysisTable = await generateVisualBlocksAnalysisTable(
+      allBlocks,
+      updatedAnalysis.blockDropoutAnalysis || [],
+      filePairId
+    );
+
+    // Add the table to the analysis
+    const finalAnalysis = {
+      ...updatedAnalysis,
+      visualBlocksAnalysisTable
+    };
+
     // Save the updated comprehensive analysis
-    await saveComprehensiveAnalysis(filePairId, updatedAnalysis);
+    await saveComprehensiveAnalysis(filePairId, finalAnalysis);
     console.log('Comprehensive analysis saved successfully');
 
     return NextResponse.json({ 
       success: true, 
-      analysis: updatedAnalysis,
+      analysis: finalAnalysis,
       message: 'Visual analysis regenerated successfully'
     });
 

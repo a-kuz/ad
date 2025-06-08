@@ -591,7 +591,7 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
                 Блоки размещены по трекам, высота блока = их длительность. 
                 Кликните на блок для детальной информации в четвертом треке.
                 <br />
-                <span className="font-medium">Автовыделение:</span> Блоки с красной пунктирной рамкой имеют наивысшую скорость падения в своем треке (исключая первые 6 и последние 5 секунд).
+                <span className="font-medium">Автовыделение:</span> Блоки с цветным фоном имеют наивысшую скорость падения в своем треке (исключая первые 6 и последние 5 секунд). Цвет фона показывает интенсивность падения.
                 <br />
                 <span className="font-medium">Фон таймлайна:</span> Интенсивность цвета показывает относительное падение удержания - 
                 какой процент от текущей аудитории теряется на каждом участке.
@@ -633,6 +633,32 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
         </div>
         <div className="text-xs text-gray-500 mt-2 italic">
           Пример: если удержание упало с 20% до 10%, то относительное падение = 50% (потеряли половину оставшейся аудитории)
+        </div>
+      </div>
+
+      {/* Легенда выделения проблемных блоков */}
+      <div className="mb-6 p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
+        <h4 className="text-sm font-semibold text-gray-800 mb-3">Выделение проблемных блоков</h4>
+        <div className="text-xs text-gray-600 mb-3">
+          Блоки с наивысшей скоростью падения в каждом треке выделяются цветным фоном
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-4 rounded border-2 border-gray-400" style={{ backgroundColor: 'rgba(34, 197, 94, 0.3)' }}></div>
+            <span className="text-xs text-gray-600">1-2.5% падения</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-4 rounded border-2 border-gray-400" style={{ backgroundColor: 'rgba(245, 158, 11, 0.4)' }}></div>
+            <span className="text-xs text-gray-600">2.5-7.5% падения</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-4 rounded border-2 border-gray-400" style={{ backgroundColor: 'rgba(249, 115, 22, 0.5)' }}></div>
+            <span className="text-xs text-gray-600">7.5-15% падения</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-4 rounded border-2 border-gray-400" style={{ backgroundColor: 'rgba(239, 68, 68, 0.6)' }}></div>
+            <span className="text-xs text-gray-600">15%+ падения</span>
+          </div>
         </div>
       </div>
 
@@ -895,38 +921,29 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
                   return totalRelativeDropout / samplePoints;
                 };
 
-                const blockDropoutRate = calculateBlockDropoutRate();
-
-                // Функция для модификации цвета блока на основе скорости падения
-                const getModifiedBlockColor = (originalColor: string, dropoutRate: number) => {
-                  // Конвертируем hex в RGB
-                  const hex = originalColor.replace('#', '');
-                  const r = parseInt(hex.substr(0, 2), 16);
-                  const g = parseInt(hex.substr(2, 2), 16);
-                  const b = parseInt(hex.substr(4, 2), 16);
-                  
-                  // Добавляем красный оттенок в зависимости от скорости падения
-                  const redBoost = Math.min(dropoutRate * 200, 100); // Максимум 100 единиц красного
-                  const newR = Math.min(255, r + redBoost);
-                  const newG = Math.max(0, g - redBoost * 0.3);
-                  const newB = Math.max(0, b - redBoost * 0.3);
-                  
-                  return `rgb(${Math.round(newR)}, ${Math.round(newG)}, ${Math.round(newB)})`;
-                };
-
-                // Функция для модификации цвета рамки
-                const getModifiedBorderColor = (originalColor: string, dropoutRate: number) => {
-                  if (dropoutRate < 0.05) return originalColor; // Минимальное падение - оригинальный цвет
-                  if (dropoutRate < 0.15) return '#F59E0B'; // Желтая рамка
-                  if (dropoutRate < 0.3) return '#F97316'; // Оранжевая рамка
-                  return '#EF4444'; // Красная рамка для высокого падения
-                };
-
-                const modifiedColor = getModifiedBlockColor(block.color, blockDropoutRate);
-                const modifiedBorderColor = getModifiedBorderColor(block.borderColor, blockDropoutRate);
-
                 const isSelected = selectedBlock === block.id;
                 const isHighlighted = highlightedBlocks.has(block.id);
+                const blockDropoutRate = calculateBlockDropoutRate();
+
+                // Функция для получения цвета фона блока на основе скорости падения
+                const getBlockBackgroundColor = (dropoutRate: number, isHighlighted: boolean) => {
+                  if (!isHighlighted) {
+                    return 'rgba(9, 9, 9, 0.5)'; // Серые блоки с прозрачностью для обычных блоков
+                  }
+                  
+                  // Проблемные блоки получают цвет в зависимости от скорости падения
+                  if (dropoutRate < 0.05) {
+                    return 'rgba(34, 197, 94, 0.8)'; // Зеленый для минимального падения
+                  } else if (dropoutRate < 0.15) {
+                    return 'rgba(245, 81, 11, 0.8)'; // Желтый для небольшого падения
+                  } else if (dropoutRate < 0.3) {
+                    return 'rgba(188, 41, 41, 0.76)'; // Оранжевый для заметного падения
+                  } else {
+                    return 'rgba(239, 68, 68, 0.8)'; // Красный для критического падения
+                  }
+                };
+
+                const blockBackgroundColor = getBlockBackgroundColor(blockDropoutRate, isHighlighted);
                 
                 return (
                   <g 
@@ -934,22 +951,6 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
                     className="cursor-pointer"
                     onClick={() => handleBlockClick(block)}
                   >
-                    {/* Рамка для блока с наивысшей скоростью падения */}
-                    {isHighlighted && (
-                      <rect
-                        x={x - 4}
-                        y={y - 4}
-                        width={width + 8}
-                        height={height + 8}
-                        fill="none"
-                        stroke="#DC2626"
-                        strokeWidth="4"
-                        rx="8"
-                        opacity="0.9"
-                        strokeDasharray="8,4"
-                      />
-                    )}
-                    
                     {/* Тень для выделенного блока */}
                     {isSelected && (
                       <rect
@@ -971,39 +972,46 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
                       y={y}
                       width={width}
                       height={height}
-                      fill={modifiedColor}
-                      fillOpacity={isSelected ? "0.9" : "0.8"}
-                      stroke={modifiedBorderColor}
+                      fill={blockBackgroundColor}
+                      stroke={block.borderColor}
                       strokeWidth="2"
                       rx="6"
-                      className="hover:opacity-100 transition-opacity"
+                      className="hover:opacity-80 transition-opacity"
                     />
                     
                     {(() => {
-                      // Разбиваем текст на две строки
-                      const maxCharsPerLine = Math.floor((width - 16) / 7); // Примерно 7px на символ
+                      // Разбиваем текст на 5 строк
+                      const maxCharsPerLine = Math.floor((width - 16) / 9); // Примерно 9px на символ для крупного шрифта
                       const words = block.name.split(' ');
-                      let line1 = '';
-                      let line2 = '';
+                      const lines = ['', '', '', '', ''];
+                      let currentLineIndex = 0;
                       
-                      // Собираем первую строку
+                      // Распределяем слова по строкам
                       for (const word of words) {
-                        if ((line1 + ' ' + word).length <= maxCharsPerLine) {
-                          line1 += (line1 ? ' ' : '') + word;
+                        if (currentLineIndex >= 5) break; // Максимум 5 строк
+                        
+                        if ((lines[currentLineIndex] + ' ' + word).length <= maxCharsPerLine) {
+                          lines[currentLineIndex] += (lines[currentLineIndex] ? ' ' : '') + word;
                         } else {
-                          // Остальные слова идут во вторую строку
-                          const remainingWords = words.slice(words.indexOf(word));
-                          line2 = remainingWords.join(' ');
-                          if (line2.length > maxCharsPerLine) {
-                            line2 = line2.substring(0, maxCharsPerLine - 3) + '...';
+                          currentLineIndex++;
+                          if (currentLineIndex < 5) {
+                            lines[currentLineIndex] = word;
+                          } else {
+                            // Если не помещается в 5 строк, добавляем многоточие
+                            if (lines[4].length > maxCharsPerLine - 3) {
+                              lines[4] = lines[4].substring(0, maxCharsPerLine - 3) + '...';
+                            } else {
+                              lines[4] += '...';
+                            }
+                            break;
                           }
-                          break;
                         }
                       }
                       
-                      const hasSecondLine = line2.length > 0;
-                      const textHeight = hasSecondLine ? 32 : 20;
-                      const maxLineWidth = Math.max(line1.length, line2.length) * 7;
+                      // Убираем пустые строки в конце
+                      const actualLines = lines.filter(line => line.length > 0);
+                      const textHeight = actualLines.length * 18 + 8; // 18px на строку + отступы
+                      const maxLineWidth = Math.max(...actualLines.map(line => line.length)) * 9;
                       
                       return (
                         <>
@@ -1013,35 +1021,24 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
                             y={y + 4}
                             width={Math.min(maxLineWidth + 8, width - 8)}
                             height={textHeight}
-                            fill="rgba(0, 0, 0, 0.6)"
-                            rx="3"
+                            fill="rgba(0, 0, 0, 0.7)"
+                            rx="4"
                           />
                           
-                          {/* Название блока - первая строка */}
-                          <text
-                            x={x + 8}
-                            y={y + 16}
-                            fill="white"
-                            fontSize="12"
-                            fontWeight="bold"
-                            textAnchor="start"
-                          >
-                            {line1}
-                          </text>
-                          
-                          {/* Название блока - вторая строка */}
-                          {hasSecondLine && (
+                          {/* Название блока - все строки */}
+                          {actualLines.map((line, index) => (
                             <text
+                              key={index}
                               x={x + 8}
-                              y={y + 30}
+                              y={y + 18 + index * 18}
                               fill="white"
-                              fontSize="12"
+                              fontSize="14"
                               fontWeight="bold"
                               textAnchor="start"
                             >
-                              {line2}
+                              {line}
                             </text>
-                          )}
+                          ))}
                         </>
                       );
                     })()}
@@ -1323,8 +1320,8 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
           <span className="font-medium ml-2">Общая длительность:</span> {formatTime(maxDuration)}
         </div>
         {highlightedBlocks.size > 0 && (
-          <div className="mt-2 text-xs text-red-600">
-            🔴 Красной пунктирной рамкой выделены блоки с наивысшей скоростью падения в каждом треке
+          <div className="mt-2 text-xs text-orange-600">
+            🎯 Цветным фоном выделены блоки с наивысшей скоростью падения в каждом треке (зеленый = низкое падение, красный = критическое)
           </div>
         )}
         {showScreenshots && hasScreenshots && (

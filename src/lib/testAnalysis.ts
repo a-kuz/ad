@@ -1,5 +1,6 @@
 import { ComprehensiveVideoAnalysis, DropoutCurveTable, AudioAnalysis, TextualVisualAnalysis, VisualAnalysis, BlockDropoutAnalysis } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
+import { generateVisualBlocksAnalysisTable } from './comprehensiveAnalysis';
 
 export function generateTestAnalysis(duration: number = 30): ComprehensiveVideoAnalysis {
   // Генерируем кривую отвалов с более реалистичной математикой
@@ -31,102 +32,103 @@ export function generateTestAnalysis(duration: number = 30): ComprehensiveVideoA
     });
   }
 
-  // Генерируем аудио анализ
+  // Создаем аудио анализ
   const audioAnalysis: AudioAnalysis = {
     transcription: [
-      { timestamp: 0, text: "Привет! Сегодня мы поговорим о важной теме", confidence: 0.95 },
-      { timestamp: duration * 0.2, text: "Основная часть урока", confidence: 0.92 },
-      { timestamp: duration * 0.8, text: "Спасибо за внимание, увидимся!", confidence: 0.94 }
+      { timestamp: 0, text: "Привет! Сегодня мы изучим основы программирования", confidence: 0.95 },
+      { timestamp: 5, text: "Начнем с простых примеров", confidence: 0.92 },
+      { timestamp: 15, text: "Теперь перейдем к более сложным темам", confidence: 0.88 },
+      { timestamp: 25, text: "Спасибо за внимание! До встречи!", confidence: 0.94 }
     ],
     groups: [
       {
         id: uuidv4(),
-        name: "Введение",
+        name: "Приветствие и введение",
         startTime: 0,
-        endTime: Math.min(10, duration * 0.33),
+        endTime: Math.min(8, duration * 0.27),
         type: "audio",
-        content: "Приветствие и введение в тему",
-        purpose: "Захватить внимание аудитории"
+        content: "Ведущий приветствует зрителей и объясняет цель урока",
+        purpose: "Установить контакт с аудиторией"
       },
       {
         id: uuidv4(),
         name: "Основная часть",
-        startTime: Math.min(10, duration * 0.33),
-        endTime: Math.min(25, duration * 0.83),
+        startTime: Math.min(8, duration * 0.27),
+        endTime: Math.min(duration * 0.87, duration - 2),
         type: "audio",
-        content: "Объяснение и демонстрация основного контента",
-        purpose: "Обучить основному навыку"
+        content: "Подробное объяснение материала с примерами",
+        purpose: "Передать основные знания"
       },
       {
         id: uuidv4(),
         name: "Заключение",
-        startTime: Math.min(25, duration * 0.83),
+        startTime: Math.min(duration * 0.87, duration - 2),
         endTime: duration,
         type: "audio",
         content: "Подведение итогов и прощание",
-        purpose: "Закрепить изученное"
+        purpose: "Закрепить материал и мотивировать"
       }
     ]
   };
 
-  // Генерируем текстовый анализ
+  // Создаем текстовый анализ
   const textualVisualAnalysis: TextualVisualAnalysis = {
     screenshots: [
-      { timestamp: 0, text: "УРОК #1: ОСНОВЫ", confidence: 0.95 },
-      { timestamp: duration * 0.3, text: "Основной контент", confidence: 0.92 },
-      { timestamp: duration * 0.9, text: "СПАСИБО!", confidence: 0.94 }
+      { timestamp: 2, text: "Основы программирования", confidence: 0.98 },
+      { timestamp: 10, text: "Пример кода: console.log('Hello')", confidence: 0.95 },
+      { timestamp: 20, text: "Сложные алгоритмы", confidence: 0.92 }
     ],
     groups: [
       {
         id: uuidv4(),
         name: "Заголовок урока",
         startTime: 0,
-        endTime: Math.min(8, duration * 0.27),
+        endTime: Math.min(5, duration * 0.17),
         type: "text",
-        content: "Основной заголовок и название урока",
+        content: "Отображение названия урока и основных тем",
         purpose: "Информировать о содержании"
       },
       {
         id: uuidv4(),
-        name: "Основные надписи",
-        startTime: Math.min(8, duration * 0.27),
-        endTime: Math.min(duration * 0.9, duration - 2),
+        name: "Примеры кода",
+        startTime: Math.min(5, duration * 0.17),
+        endTime: Math.min(duration * 0.77, duration - 3),
         type: "text",
-        content: "Подписи и инструкции для основного контента",
-        purpose: "Визуальная поддержка обучения"
+        content: "Демонстрация практических примеров программирования",
+        purpose: "Показать применение теории"
       },
       {
         id: uuidv4(),
-        name: "Финальная надпись",
-        startTime: Math.min(duration * 0.9, duration - 2),
+        name: "Итоговые слайды",
+        startTime: Math.min(duration * 0.77, duration - 3),
         endTime: duration,
         type: "text",
-        content: "Благодарность зрителям",
-        purpose: "Позитивное завершение"
+        content: "Резюме урока и дополнительные ресурсы",
+        purpose: "Закрепить знания"
       }
     ]
   };
 
-  // Генерируем визуальный анализ
+  // Создаем визуальный анализ
   const visualAnalysis: VisualAnalysis = {
     screenshots: [
       { 
-        timestamp: 0, 
-        description: "Человек в кадре приветствует зрителей", 
-        actions: ["приветствие", "улыбка"], 
-        elements: ["человек", "фон", "текст"] 
+        timestamp: 1, 
+        description: "Ведущий в кадре, дружелюбная улыбка", 
+        actions: ["говорит", "жестикулирует"], 
+        elements: ["лицо ведущего", "фон студии"] 
       },
       { 
-        timestamp: 10, 
-        description: "Демонстрация простого движения", 
-        actions: ["демонстрация", "объяснение"], 
-        elements: ["человек", "руки", "предмет"] 
+        timestamp: 12, 
+        description: "Экран с кодом, ведущий объясняет", 
+        actions: ["указывает на экран", "объясняет"], 
+        elements: ["код на экране", "указка"] 
       },
       { 
-        timestamp: 25, 
-        description: "Показ сложного упражнения", 
-        actions: ["сложная демонстрация"], 
-        elements: ["человек", "оборудование", "инструкции"] 
+        timestamp: 28, 
+        description: "Ведущий прощается, призыв к действию", 
+        actions: ["машет рукой", "улыбается"], 
+        elements: ["контактная информация", "логотип"] 
       }
     ],
     groups: [
@@ -209,14 +211,60 @@ export function generateTestAnalysis(duration: number = 30): ComprehensiveVideoA
     });
   }
 
+  // Генерируем итоговую таблицу анализа блоков (синхронно для тестовых данных)
+  const visualBlocksAnalysisTable = generateTestVisualBlocksAnalysisTable(
+    [...audioAnalysis.groups, ...textualVisualAnalysis.groups, ...visualAnalysis.groups],
+    blockDropoutAnalysis
+  );
+
   return {
     dropoutCurve,
     audioAnalysis,
     textualVisualAnalysis,
     visualAnalysis,
     blockDropoutAnalysis,
-    timelineAlignment
+    timelineAlignment,
+    visualBlocksAnalysisTable
   };
+}
+
+// Функция для генерации тестовой таблицы анализа блоков
+function generateTestVisualBlocksAnalysisTable(
+  allBlocks: any[],
+  blockDropoutAnalysis: any[]
+): string {
+  // Подготавливаем данные для таблицы
+  const blocksWithDropouts = allBlocks.map(block => {
+    const dropoutData = blockDropoutAnalysis.find(ba => ba.blockId === block.id);
+    return {
+      name: block.name,
+      startTime: Math.floor(block.startTime),
+      endTime: Math.floor(block.endTime),
+      purpose: block.purpose,
+      content: block.content,
+      relativeDropout: dropoutData?.relativeDropout || 0
+    };
+  });
+
+  // Сортируем по времени
+  blocksWithDropouts.sort((a, b) => a.startTime - b.startTime);
+
+  // Создаем Markdown таблицу
+  let table = `| Визуальный блок | Время (сек) | Цель | Смысл для пользователя | Относительный отвал 🔻 |\n`;
+  table += `|---|---|---|---|---|\n`;
+
+  blocksWithDropouts.forEach(block => {
+    const timeRange = `${block.startTime}-${block.endTime}`;
+    const goal = block.purpose.split(' ').slice(0, 2).join(' '); // Первые 2 слова
+    const meaning = block.content.split(' ').slice(0, 8).join(' '); // Первые 8 слов
+    const dropout = block.relativeDropout > 30 ? 
+      `🔻 ${block.relativeDropout.toFixed(1)}%` : 
+      `${block.relativeDropout.toFixed(1)}%`;
+    
+    table += `| ${block.name} | ${timeRange} | ${goal} | ${meaning} | ${dropout} |\n`;
+  });
+
+  return table;
 }
 
 // Вспомогательная функция для интерполяции удержания

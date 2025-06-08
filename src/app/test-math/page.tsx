@@ -212,6 +212,21 @@ export default function TestMathPage() {
                 </ul>
               </div>
             </div>
+
+            {/* Итоговая таблица анализа блоков */}
+            {analysis.visualBlocksAnalysisTable && (
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-xl font-semibold mb-4 text-gray-900">
+                  📊 Итоговая таблица анализа блоков
+                </h2>
+                
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <pre className="text-sm text-gray-700 whitespace-pre-wrap font-mono">
+                    {analysis.visualBlocksAnalysisTable}
+                  </pre>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

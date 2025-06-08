@@ -15,6 +15,74 @@ interface ComprehensiveAnalysisViewProps {
   filePairId: string;
 }
 
+// Компонент для рендеринга Markdown таблицы
+const MarkdownTable: React.FC<{ markdown: string }> = ({ markdown }) => {
+  if (!markdown) return null;
+
+  // Простой парсер Markdown таблиц
+  const parseMarkdownTable = (md: string) => {
+    const lines = md.trim().split('\n').filter(line => line.trim());
+    if (lines.length < 3) return null;
+
+    const headerLine = lines[0];
+    const separatorLine = lines[1];
+    const dataLines = lines.slice(2);
+
+    // Парсим заголовки
+    const headers = headerLine.split('|').map(h => h.trim()).filter(h => h);
+
+    // Парсим данные
+    const rows = dataLines.map(line => 
+      line.split('|').map(cell => cell.trim()).filter(cell => cell !== '')
+    );
+
+    return { headers, rows };
+  };
+
+  const tableData = parseMarkdownTable(markdown);
+  if (!tableData) {
+    return (
+      <div className="bg-gray-50 p-4 rounded-lg">
+        <pre className="text-sm text-gray-600 whitespace-pre-wrap">{markdown}</pre>
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200">
+        <thead className="bg-gray-50">
+          <tr>
+            {tableData.headers.map((header, index) => (
+              <th
+                key={index}
+                scope="col"
+                className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+              >
+                {header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="bg-white divide-y divide-gray-200">
+          {tableData.rows.map((row, rowIndex) => (
+            <tr key={rowIndex} className="hover:bg-gray-50">
+              {row.map((cell, cellIndex) => (
+                <td key={cellIndex} className="px-4 py-4 text-sm text-gray-900">
+                  {/* Проверяем, содержит ли ячейка эмодзи треугольника для выделения */}
+                  <div className={cell.includes('🔻') ? 'font-medium text-red-600' : ''}>
+                    {cell}
+                  </div>
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
 const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({
   analysis: initialAnalysis,
   sessionId,
@@ -69,10 +137,50 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({
     setAnalysis(newAnalysis);
   };
 
+  // Отладочная информация
+  console.log('ComprehensiveAnalysisView - analysis:', {
+    hasVisualBlocksAnalysisTable: !!analysis.visualBlocksAnalysisTable,
+    visualBlocksAnalysisTableLength: analysis.visualBlocksAnalysisTable?.length || 0,
+    audioBlocks: analysis.audioAnalysis?.groups?.length || 0,
+    textBlocks: analysis.textualVisualAnalysis?.groups?.length || 0,
+    visualBlocks: analysis.visualAnalysis?.groups?.length || 0,
+    blockDropoutAnalysis: analysis.blockDropoutAnalysis?.length || 0
+  });
+
   return (
     <div className="space-y-8">
+      
+      {/* Итоговая таблица анализа визуальных блоков */}
+      {analysis.visualBlocksAnalysisTable && (
+        <div className="bg-white rounded-lg shadow border p-6">
+          <h3 className="text-xl font-thin mb-4 flex items-center text-gray-900">
+            <span className="w-3 h-3 bg-red-500 rounded-full mr-2"></span>
+            Сопоставление блоков: цель, смысл, удержание
+            
+          </h3>
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <MarkdownTable markdown={analysis.visualBlocksAnalysisTable} />
+          </div>
+        </div>
+      )}
+
+      {/* Отладочная информация - показываем если таблицы нет */}
+      {!analysis.visualBlocksAnalysisTable && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <h3 className="text-lg font-medium text-yellow-800 mb-2">
+            🔧 Отладочная информация
+          </h3>
+          <div className="text-sm text-yellow-700">
+            <p>Таблица анализа блоков не найдена.</p>
+            <p>Аудио блоков: {analysis.audioAnalysis?.groups?.length || 0}</p>
+            <p>Текстовых блоков: {analysis.textualVisualAnalysis?.groups?.length || 0}</p>
+            <p>Визуальных блоков: {analysis.visualAnalysis?.groups?.length || 0}</p>
+            <p>Анализ отвалов: {analysis.blockDropoutAnalysis?.length || 0}</p>
+          </div>
+        </div>
+      )}
      
-      {/* Интерактивный таймлайн удержания аудитории - перемещен в начало */}
+      {/* Интерактивный таймлайн удержания аудитории */}
       <div className="bg-white rounded-lg shadow border p-6">
         <h3 className="text-xl font-thin mb-4 flex items-center text-gray-900">
           <span className="w-3 h-3 bg-indigo-500 rounded-full mr-2"></span>

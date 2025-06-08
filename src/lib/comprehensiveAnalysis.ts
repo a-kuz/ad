@@ -4,8 +4,6 @@ import { extractAudioFromVideo, transcribeAudioFile } from './audioProcessing';
 import { extractScreenshots, analyzeTextInScreenshots, analyzeVisualContent } from './videoProcessing';
 import { getVideoMetadata } from './videoProcessor';
 import OpenAI from 'openai';
-import { extractAudio } from './audioProcessor';
-import { transcribeAudio } from './transcription';
 import { generateTestAnalysis } from './testAnalysis';
 import { validateAndFixAnalysis } from './mathValidation';
 import { AnalysisLogger } from './analysisLogger';
@@ -173,13 +171,23 @@ export async function performComprehensiveAnalysis(
       await logger.updateStep('Найдены предупреждения при валидации, результаты исправлены');
     }
 
+    // 9. Генерация итоговой таблицы анализа блоков
+    await logger.startStep('SUMMARY_TABLE', 'Создание итоговой таблицы анализа');
+    console.log('Step 9: Generating visual blocks analysis table...');
+    const visualBlocksAnalysisTable = await generateVisualBlocksAnalysisTable(
+      [...improvedAudioAnalysis.groups, ...improvedTextualVisualAnalysis.groups, ...improvedVisualAnalysis.groups],
+      blockDropoutAnalysis,
+      filePairId
+    );
+    await logger.completeStep('Итоговая таблица анализа создана');
+
     const result: ComprehensiveVideoAnalysis = {
       dropoutCurve: validationResult.fixedDropoutCurve,
       audioAnalysis: improvedAudioAnalysis,
       textualVisualAnalysis: improvedTextualVisualAnalysis,
       visualAnalysis: improvedVisualAnalysis,
-      blockDropoutAnalysis,
-      timelineAlignment
+      blockDropoutAnalysis: blockDropoutAnalysis,
+      visualBlocksAnalysisTable
     };
     
     console.log('Comprehensive analysis completed successfully');
@@ -283,7 +291,7 @@ async function improveBlockDescriptions<T extends AudioAnalysis | TextualVisualA
           }
 
           const response = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: "gpt-4.1-mini",
             messages: [{ role: "user", content: prompt }],
             temperature: 0.3,
             max_tokens: 200,
@@ -409,28 +417,91 @@ function createTimelineAlignment(
   return timeline;
 }
 
-// Функция для реального анализа (пока заглушка)
-export async function performRealAnalysis(
-  videoPath: string,
-  graphPath: string
-): Promise<ComprehensiveVideoAnalysis> {
-  // TODO: Здесь будет реальная логика:
-  // 1. Анализ кривой досмотра из графика
-  // 2. Извлечение аудио из видео
-  // 3. Транскрипция аудио
-  // 4. Извлечение скриншотов
-  // 5. Анализ текста на скриншотах
-  // 6. Визуальный анализ скриншотов
-  // 7. Сопоставление с отвалами
-  
-  console.log('Real analysis not implemented yet, using test data');
-  // Получаем реальную продолжительность видео
-  const { getVideoMetadata } = await import('./videoProcessor');
+export async function generateVisualBlocksAnalysisTable(
+  allBlocks: any[],
+  blockDropoutAnalysis: any[],
+  filePairId?: string
+): Promise<string> {
   try {
-    const metadata = await getVideoMetadata(videoPath);
-    return generateTestAnalysis(metadata.duration);
+    console.log('Generating visual blocks analysis table...');
+
+    // Подготавливаем данные для анализа
+    const blocksWithDropouts = allBlocks.map(block => {
+      const dropoutData = blockDropoutAnalysis.find(ba => ba.blockId === block.id);
+      return {
+        id: block.id,
+        name: block.name,
+        startTime: block.startTime,
+        endTime: block.endTime,
+        type: block.type,
+        content: block.content,
+        purpose: block.purpose,
+        startRetention: dropoutData?.startRetention || 0,
+        endRetention: dropoutData?.endRetention || 0,
+        absoluteDropout: dropoutData?.absoluteDropout || 0,
+        relativeDropout: dropoutData?.relativeDropout || 0
+      };
+    });
+
+    // Сортируем блоки по относительному отвалу (убывание)
+    blocksWithDropouts.sort((a, b) => b.relativeDropout - a.relativeDropout);
+
+    // Выделяем блоки с высоким отвалом (>30%)
+    const highDropoutBlocks = blocksWithDropouts.filter(block => block.relativeDropout > 30);
+
+    const prompt = `
+Проанализируй данные о блоках видео и создай итоговую таблицу анализа в формате Markdown.
+
+Данные блоков (отсортированы по убыванию относительного отвала):
+${JSON.stringify(blocksWithDropouts, null, 2)}
+
+
+Создай таблицу в формате Markdown со следующими колонками:
+- блок (название)
+- Время (сек) (в формате "начало-конец")
+- Цель (назначение блока)
+- Смысл для пользователя (краткое описание содержания)
+- Относительный отвал 🔻 (с эмодзи для блоков >30%)
+
+Требования:
+0. Аналитически сопаставь блоки текста, аудио и визуальные блоки. И выдели новые "смысловые блоки"
+1. В таблице должны быть только "смысловые блоки"
+2. Блоки не могут пересекаться по времени. Если блок 0-2, то следующий блок не может быть 1-3. может быть минимум 2.5-X
+1. выдели красным треугольником 🔻 блоки с относительным отвалом >30%
+2. Отсортируй блоки по времени (по возрастанию startTime)
+3. Время указывай в секундах в формате "0-1.5", "2-3.5" и т.д.
+4. В колонке "Цель" используй краткие формулировки (1-2 слова)
+5. В колонке "Смысл для пользователя" - краткое описание того, что происходит (до 10 слов)
+6. В колонке "Относительный отвал" добавляй 🔻 для значений >30%
+7. Используй правильный синтаксис Markdown таблиц
+8. НЕ добавляй заголовки или дополнительный текст - только таблицу
+
+Пример формата:
+|  блок | Время (сек) | Цель | Смысл для пользователя | Относительный отвал 🔻 |
+|---|---|---|---|---|
+| Взгляд в зеркало | 0-1 | Эмоциональный «крючок» | Зритель видит «себя»: момент саморефлексии, «точка боли» | 🔻 39.7% |
+
+Верни только таблицу в формате Markdown без дополнительных комментариев.
+`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.3,
+      max_tokens: 1000,
+    });
+
+    const tableMarkdown = response.choices[0].message.content?.trim() || '';
+    
+    console.log('Visual blocks analysis table generated successfully');
+    return tableMarkdown.replaceAll(/```\w*/g, '');
+
   } catch (error) {
-    console.error('Failed to get video metadata, using default 30s:', error);
-    return generateTestAnalysis(30);
+    console.error('Error generating visual blocks analysis table:', error);
+    return `
+| Визуальный блок | Время (сек) | Цель | Смысл для пользователя | Относительный отвал 🔻 |
+|---|---|---|---|---|
+| Ошибка генерации | - | - | Не удалось создать таблицу анализа | - |
+`;
   }
-} 
+}

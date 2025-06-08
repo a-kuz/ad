@@ -93,7 +93,7 @@ export default function AdminTokenPage() {
   };
 
   const deleteSessionHandler = async (sessionId: string) => {
-    if (!confirm('Вы уверены, что хотите удалить эту сессию?')) {
+    if (!confirm('Вы уверены, что хотите удалить эту сессию? Это также удалит все связанные файлы (видео, графики, скриншоты).')) {
       return;
     }
 
@@ -109,6 +109,56 @@ export default function AdminTokenPage() {
       }
     } catch {
       alert('Ошибка при удалении сессии');
+    }
+  };
+
+  const deleteFilePairHandler = async (sessionId: string, filePairId: string, fileName: string) => {
+    if (!confirm(`Вы уверены, что хотите удалить файловую пару "${fileName}"? Это также удалит все связанные файлы (видео, графики, скриншоты).`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/admin/sessions/${sessionId}/${filePairId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        fetchData(); // Refresh data
+      } else {
+        alert('Ошибка при удалении файловой пары');
+      }
+    } catch {
+      alert('Ошибка при удалении файловой пары');
+    }
+  };
+
+  const cleanupFilesHandler = async () => {
+    if (!confirm('Вы уверены, что хотите очистить все неиспользуемые файлы? Это действие необратимо.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/admin/cleanup-files', {
+        method: 'POST',
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        
+        let message = 'Очистка завершена:\n';
+        message += `Удалено файлов: ${result.deletedFiles?.length || 0}\n`;
+        message += `Удалено папок: ${result.deletedDirectories?.length || 0}\n`;
+        if (result.errors?.length > 0) {
+          message += `Ошибок: ${result.errors.length}`;
+        }
+        
+        alert(message);
+        fetchData(); // Refresh data
+      } else {
+        alert('Ошибка при очистке файлов');
+      }
+    } catch {
+      alert('Ошибка при очистке файлов');
     }
   };
 
@@ -192,6 +242,13 @@ export default function AdminTokenPage() {
               >
                 <FiFolder className="mr-2"/> Все файлы
               </a>
+              <button
+                onClick={cleanupFilesHandler}
+                className="inline-flex items-center px-3 py-1 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-red-50 hover:bg-red-100"
+              >
+                <FiTrash2 className="mr-2" />
+                Очистить файлы
+              </button>
               <button
                 onClick={fetchData}
                 className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
@@ -371,9 +428,18 @@ export default function AdminTokenPage() {
                                     <span className="text-sm font-medium text-gray-900">
                                       Пара #{index + 1}
                                     </span>
-                                    <span className="text-xs text-gray-500">
-                                      {new Date(pair.uploadedAt).toLocaleString('ru-RU')}
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs text-gray-500">
+                                        {new Date(pair.uploadedAt).toLocaleString('ru-RU')}
+                                      </span>
+                                      <button
+                                        onClick={() => deleteFilePairHandler(session.sessionId, pair.id, pair.videoName || pair.graphName || `Пара #${index + 1}`)}
+                                        className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+                                        title="Удалить файловую пару"
+                                      >
+                                        <FiTrash2 className="h-3 w-3" />
+                                      </button>
+                                    </div>
                                   </div>
                                   <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-600">
                                     <div>
