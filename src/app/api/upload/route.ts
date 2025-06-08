@@ -100,7 +100,8 @@ export async function POST(req: NextRequest) {
 
     await addFilePairToSession(sessionId, uploadedFilePair);
 
-    setImmediate(async () => {
+    // Запускаем анализ асинхронно без блокировки ответа
+    const runAnalysisAsync = async () => {
       try {
         console.log(`Запуск комплексного анализа для пары файлов ${uploadedFilePair.id}`);
         
@@ -164,7 +165,10 @@ export async function POST(req: NextRequest) {
           console.error('Failed to save error analysis:', saveError);
         }
       }
-    });
+    };
+    
+    // Запускаем анализ в фоне
+    runAnalysisAsync().catch(console.error);
 
     return NextResponse.json({ 
       success: true, 

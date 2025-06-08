@@ -199,7 +199,7 @@ export async function analyzeBlockDropouts({
       : dropoutCurve.initialViewers;
     const endViewers = pointsBeforeEnd.length > 0 
       ? pointsBeforeEnd[0].viewersAfter
-      : dropoutCurve.initialViewers;
+      : startViewers;
     
     const startRetention = (startViewers / dropoutCurve.initialViewers) * 100;
     const endRetention = (endViewers / dropoutCurve.initialViewers) * 100;
@@ -219,13 +219,12 @@ export async function analyzeBlockDropouts({
     };
   });
 
-  // Save the LLM logs to a file if we have a logger
-  if (llmLogger && llmLogger.getLogCount() > 0) {
+  // Save LLM logs if we have a logger
+  if (llmLogger) {
     try {
-      const logFilePath = await llmLogger.saveToFile();
-      console.log(`LLM prompts and responses saved to: ${logFilePath}`);
-    } catch (logError) {
-      console.error('Error saving LLM logs:', logError);
+      await llmLogger.saveToFile();
+    } catch (error) {
+      console.error('Error saving LLM logs:', error);
     }
   }
 

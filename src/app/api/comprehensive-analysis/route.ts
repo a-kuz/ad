@@ -98,25 +98,12 @@ export async function POST(request: NextRequest) {
     
     // Generate screenshots for visual analysis
     console.log("Generating screenshots for visual analysis");
-    const screenshotsDir = filePairId;
-    const screenshotsPath = path.join(process.cwd(), 'public', 'uploads', sessionId, 'screenshots', screenshotsDir);
-    
-    // Create the screenshots directory if it doesn't exist
-    if (!fs.existsSync(screenshotsPath)) {
-      fs.mkdirSync(screenshotsPath, { recursive: true });
-    }
-    
-    // Determine step for taking screenshots (1 screenshot every 0.5s by default)
     const step = 0.5;
     
-    console.log(`Taking screenshots with step ${step}s`);
-    const ffmpegCmd = `ffmpeg -i ${absoluteVideoPath} -vf fps=1/${step} ${path.join(screenshotsPath, 'screenshot_%04.1fs.jpg')}`;
-    
-    const util = await import('util');
-    const exec = util.promisify((await import('child_process')).exec);
-    
     try {
-      await exec(ffmpegCmd);
+      // Используем функцию из videoProcessing.ts для последовательной обработки
+      const { extractScreenshots } = await import('@/lib/videoProcessing');
+      await extractScreenshots(absoluteVideoPath, sessionId, videoMetadata.duration, filePairId);
       console.log("Screenshots generated successfully");
     } catch (error) {
       console.error("Error generating screenshots:", error);

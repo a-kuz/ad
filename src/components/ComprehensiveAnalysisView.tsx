@@ -8,6 +8,7 @@ import {
 import VerticalRetentionTimeline from './VerticalRetentionTimeline';
 import CustomPromptForm from './CustomPromptForm';
 import LlmLogsView from './LlmLogsView';
+import MiniDropoutChart from './MiniDropoutChart';
 
 interface ComprehensiveAnalysisViewProps {
   analysis: ComprehensiveVideoAnalysis;
@@ -132,6 +133,31 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({
     }
   };
 
+  // Helper function to convert dropout curve to DropoutCurveTable format for MiniDropoutChart
+  const getDropoutCurveTable = () => {
+    if (!analysis?.dropoutCurve) return null;
+
+    if (isDropoutCurveTable(analysis.dropoutCurve)) {
+      return analysis.dropoutCurve;
+    } else {
+      // Convert DropoutCurve to DropoutCurveTable
+      const dropoutCurve = analysis.dropoutCurve as any;
+      if (!dropoutCurve.dropouts) return null;
+
+      const points = dropoutCurve.dropouts.map((dropout: any) => ({
+        timestamp: dropout.time,
+        retentionPercentage: (dropout.viewersAfter / dropoutCurve.initialViewers) * 100,
+        dropoutPercentage: 100 - ((dropout.viewersAfter / dropoutCurve.initialViewers) * 100)
+      }));
+
+      return {
+        points,
+        step: 0.5,
+        totalDuration: dropoutCurve.totalDuration || 0
+      };
+    }
+  };
+
   // Update the analysis data when regenerated
   const handleAnalysisUpdate = (newAnalysis: ComprehensiveVideoAnalysis) => {
     setAnalysis(newAnalysis);
@@ -148,7 +174,7 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({
   });
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 relative">
       
       {/* Итоговая таблица анализа визуальных блоков */}
       {analysis.visualBlocksAnalysisTable && (
@@ -468,8 +494,6 @@ const ComprehensiveAnalysisView: React.FC<ComprehensiveAnalysisViewProps> = ({
           </table>
         </div>
       </div>
-
-
 
     </div>
   );

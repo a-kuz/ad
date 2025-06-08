@@ -36,7 +36,7 @@ const MiniDropoutChart: React.FC<MiniDropoutChartProps> = ({
   }).join(' ');
 
   return (
-    <div className="bg-gray-50 border rounded" style={{ width, height }}>
+    <div className=" rounded" style={{ width, height }}>
       <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`}>
         {/* Кривая досмотра */}
         <path
@@ -48,12 +48,7 @@ const MiniDropoutChart: React.FC<MiniDropoutChartProps> = ({
           strokeLinejoin="round"
         />
         
-        {/* Заливка под кривой */}
-        <path
-          d={`${pathData} L ${padding + chartWidth} ${padding + chartHeight} L ${padding} ${padding + chartHeight} Z`}
-          fill="#3b82f6"
-          fillOpacity="0.08"
-        />
+       
       </svg>
     </div>
   );

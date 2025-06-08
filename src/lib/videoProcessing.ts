@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { TextualVisualAnalysis, VisualAnalysis, ContentBlock } from '@/types';
+import { systemMonitor } from './systemMonitor';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -54,6 +55,9 @@ export async function extractScreenshots(videoPath: string, sessionId: string, d
       
       console.log(`Extracting screenshot ${index + 1}/${totalFrames} at ${timestamp}s -> ${outputPath}`);
       
+      // Ожидаем свободный слот для ffmpeg перед созданием Promise
+      await systemMonitor.acquireFFmpegSlot();
+      
       return new Promise<void>((resolveScreenshot, rejectScreenshot) => {
         const command = ffmpeg(videoPath)
           .seekInput(timestamp)
@@ -78,6 +82,7 @@ export async function extractScreenshots(videoPath: string, sessionId: string, d
         });
 
         command.on('end', () => {
+          systemMonitor.releaseFFmpegSlot(); // Освобождаем слот
           console.log(`Screenshot ${index + 1}/${totalFrames} completed:`, outputPath);
           screenshots.push(outputPath);
           processedFrames++;
@@ -85,6 +90,7 @@ export async function extractScreenshots(videoPath: string, sessionId: string, d
         });
 
         command.on('error', (err, stdout, stderr) => {
+          systemMonitor.releaseFFmpegSlot(); // Освобождаем слот при ошибке
           console.error('=== FFmpeg SCREENSHOT ERROR ===');
           console.error(`Error on screenshot ${index + 1}:`, err.message);
           console.error('Input file:', videoPath);
@@ -98,14 +104,20 @@ export async function extractScreenshots(videoPath: string, sessionId: string, d
       });
     };
 
-    // Извлекаем скриншоты последовательно
+    // Извлекаем скриншоты последовательно с контролем нагрузки
     try {
       for (let i = 0; i < totalFrames; i++) {
         await extractScreenshot(i);
         
-        // Небольшая пауза между скриншотами для стабильности
+        // Увеличиваем паузу между скриншотами для снижения нагрузки на систему
         if (i < totalFrames - 1) {
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        
+        // Каждые 10 скриншотов делаем более длинную паузу
+        if ((i + 1) % 10 === 0) {
+          console.log(`Processed ${i + 1}/${totalFrames} screenshots, taking a break...`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
       

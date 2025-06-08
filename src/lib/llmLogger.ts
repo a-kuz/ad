@@ -25,6 +25,8 @@ export class LlmLogger {
   constructor(filePairId: string) {
     this.filePairId = filePairId;
     this.outputDir = path.join(process.cwd(), 'public', 'logs', 'llm', filePairId);
+    // Create the output directory immediately
+    mkdirp.sync(this.outputDir);
   }
 
   /**
@@ -48,7 +50,7 @@ export class LlmLogger {
     const responseContent = response.choices[0]?.message?.content || 'No response content';
 
     // Add to logs array
-    this.logs.push({
+    const logEntry = {
       timestamp: startTime,
       modelName,
       prompt: formattedPrompt,
@@ -59,7 +61,35 @@ export class LlmLogger {
         totalTokens: response.usage?.total_tokens,
       },
       durationMs
-    });
+    };
+    this.logs.push(logEntry);
+
+    // Save this interaction immediately
+    const timestamp = startTime.toISOString().replace(/[:.]/g, '-');
+    const filename = `interaction-${timestamp}.md`;
+    const filePath = path.join(this.outputDir, filename);
+
+    let markdown = `# LLM Interaction Log\n\n`;
+    markdown += `Generated on: ${startTime.toISOString()}\n\n`;
+    markdown += `**Model**: ${modelName}\n`;
+    markdown += `**Duration**: ${durationMs}ms\n`;
+    
+    if (logEntry.tokens) {
+      markdown += `**Tokens**: ${logEntry.tokens.totalTokens || 'N/A'} `;
+      markdown += `(Prompt: ${logEntry.tokens.promptTokens || 'N/A'}, `;
+      markdown += `Completion: ${logEntry.tokens.completionTokens || 'N/A'})\n`;
+    }
+    
+    markdown += '\n### Prompt\n\n```\n';
+    markdown += formattedPrompt;
+    markdown += '\n```\n\n';
+    
+    markdown += '### Response\n\n```\n';
+    markdown += responseContent;
+    markdown += '\n```\n\n';
+
+    await mkdirp(this.outputDir);
+    fs.writeFileSync(filePath, markdown);
   }
 
   /**

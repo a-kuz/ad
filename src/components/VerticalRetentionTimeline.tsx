@@ -22,14 +22,17 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
   sessionId,
   filePairId
 }) => {
-  const [showAudio, setShowAudio] = React.useState(true);
-  const [showText, setShowText] = React.useState(true);
-  const [showVisual, setShowVisual] = React.useState(true);
-  const [showScreenshots, setShowScreenshots] = React.useState(true);
   const [selectedBlock, setSelectedBlock] = React.useState<string | null>(null);
   const [highlightedBlocks, setHighlightedBlocks] = React.useState<Set<string>>(new Set());
   const [screenshotPaths, setScreenshotPaths] = React.useState<{[key: string]: string}>({});
   const [screenshotsLoading, setScreenshotsLoading] = React.useState(false);
+  const [hoveredScreenshot, setHoveredScreenshot] = React.useState<{
+    timestamp: number;
+    imagePath: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [showInfoTooltip, setShowInfoTooltip] = React.useState(false);
 
   // Загружаем пути к скриншотам при монтировании компонента
   React.useEffect(() => {
@@ -286,7 +289,7 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
     const blocks: BlockWithTrack[] = [];
     
     // Визуальные блоки - трек 0
-    if (showVisual && analysis.visualAnalysis?.groups) {
+    if (analysis.visualAnalysis?.groups) {
       analysis.visualAnalysis.groups.forEach(block => {
         blocks.push({
           ...block,
@@ -300,7 +303,7 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
     }
     
     // Аудио блоки - трек 1
-    if (showAudio && analysis.audioAnalysis?.groups) {
+    if (analysis.audioAnalysis?.groups) {
       analysis.audioAnalysis.groups.forEach(block => {
         blocks.push({
           ...block,
@@ -314,7 +317,7 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
     }
     
     // Текстовые блоки - трек 2
-    if (showText && analysis.textualVisualAnalysis?.groups) {
+    if (analysis.textualVisualAnalysis?.groups) {
       analysis.textualVisualAnalysis.groups.forEach(block => {
         blocks.push({
           ...block,
@@ -335,6 +338,18 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
   const totalTracks = 4;
 
   
+
+  // Добавляем обработчик клика для закрытия превью
+  React.useEffect(() => {
+    const handleClickOutside = () => {
+      setHoveredScreenshot(null);
+    };
+
+    document.addEventListener('click', handleClickOutside);
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, []);
 
   // Вызываем поиск при изменении блоков
   React.useEffect(() => {
@@ -390,12 +405,12 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
     setHighlightedBlocks(highlightedIds);
   }, [blocksWithTracks.length, maxDuration]);
 
-  // Размеры - увеличиваем ширину треков и убираем отступы по бокам
+  // Размеры - делаем график более узким
   const pixelsPerSecond = 150;
   const timelineHeight = maxDuration * pixelsPerSecond + 60;
-  const trackWidth = 280; // Увеличиваем ширину треков
-  const screenshotsTrackWidth =  170; // Ширина трека со скриншотами
-  const timeAxisWidth = 120; // Уменьшаем ширину временной шкалы
+  const trackWidth = 200; // Уменьшаем ширину треков
+  const screenshotsTrackWidth = 120; // Уменьшаем ширину трека со скриншотами
+  const timeAxisWidth = 80; // Еще больше уменьшаем ширину временной шкалы
   const timelineWidth = 3 * trackWidth + screenshotsTrackWidth + trackWidth + timeAxisWidth; // 3 обычных трека + скриншоты + информация
 
   // Создаем временные метки каждые 0.5 секунды
@@ -426,6 +441,299 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
 
   return (
     <div className="w-full max-w-none relative">
+      {/* Tooltip с информацией */}
+      {showInfoTooltip && (
+        <div 
+          className="fixed z-[110] bg-white border-2 border-blue-400 rounded-lg shadow-2xl max-w-2xl"
+          style={{ 
+            right: '20px', 
+            top: '100px',
+            maxHeight: '80vh',
+            overflow: 'auto'
+          }}
+        >
+          {/* Заголовок tooltip */}
+          <div className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-4 py-3 rounded-t-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-bold">
+                <span>ℹ️</span>
+                <span>Справка по таймлайну</span>
+              </div>
+              <button
+                onClick={() => setShowInfoTooltip(false)}
+                className="text-white hover:text-gray-200 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+          
+          {/* Содержимое tooltip */}
+          <div className="p-6 space-y-6">
+            {/* Информационная панель о таймлайне */}
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-start gap-3">
+                <div className="text-blue-600 mt-0.5">⏱️</div>
+                <div className="text-sm text-blue-800">
+                  <span className="font-medium">Вертикальный таймлайн:</span> Время идет сверху вниз. 
+                  Блоки размещены по трекам, высота блока = их длительность. 
+                  Кликните на блок для детальной информации в четвертом треке.
+                  <br />
+                  <span className="font-medium">Автовыделение:</span> Блоки с цветным фоном имеют наивысшую скорость падения в своем треке (исключая первые 6 и последние 5 секунд). Цвет фона показывает интенсивность падения.
+                  <br />
+                  <span className="font-medium">Фон таймлайна:</span> Интенсивность цвета показывает относительное падение удержания - 
+                  какой процент от текущей аудитории теряется на каждом участке.
+                </div>
+              </div>
+            </div>
+
+            {/* Легенда интенсивности падения */}
+            <div className="p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
+              <h4 className="text-sm font-semibold text-gray-800 mb-3">Относительное падение удержания</h4>
+              <div className="text-xs text-gray-600 mb-3">
+                Цвет показывает, какой процент от текущей аудитории потерян на каждом участке времени
+              </div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-4 bg-transparent border border-gray-300 rounded"></div>
+                  <span className="text-xs text-gray-600">0-1%</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-4 rounded" style={{ backgroundColor: getDropoutIntensityColor(0.05) }}></div>
+                  <span className="text-xs text-gray-600">1-5%</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-4 rounded" style={{ backgroundColor: getDropoutIntensityColor(0.2) }}></div>
+                  <span className="text-xs text-gray-600">5-15%</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-4 rounded" style={{ backgroundColor: getDropoutIntensityColor(0.4) }}></div>
+                  <span className="text-xs text-gray-600">15-25%</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-4 rounded" style={{ backgroundColor: getDropoutIntensityColor(0.65) }}></div>
+                  <span className="text-xs text-gray-600">25-40%</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-4 rounded" style={{ backgroundColor: getDropoutIntensityColor(0.9) }}></div>
+                  <span className="text-xs text-gray-600">40%+</span>
+                </div>
+              </div>
+              <div className="text-xs text-gray-500 mt-2 italic">
+                Пример: если удержание упало с 20% до 10%, то относительное падение = 50% (потеряли половину оставшейся аудитории)
+              </div>
+            </div>
+
+            {/* Легенда выделения проблемных блоков */}
+            <div className="p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
+              <h4 className="text-sm font-semibold text-gray-800 mb-3">Выделение проблемных блоков</h4>
+              <div className="text-xs text-gray-600 mb-3">
+                Блоки с наивысшей скоростью падения в каждом треке выделяются цветным фоном
+              </div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-4 rounded border-2 border-gray-400" style={{ backgroundColor: 'rgba(34, 197, 94, 0.3)' }}></div>
+                  <span className="text-xs text-gray-600">1-2.5% падения</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-4 rounded border-2 border-gray-400" style={{ backgroundColor: 'rgba(245, 158, 11, 0.4)' }}></div>
+                  <span className="text-xs text-gray-600">2.5-7.5% падения</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-4 rounded border-2 border-gray-400" style={{ backgroundColor: 'rgba(249, 115, 22, 0.5)' }}></div>
+                  <span className="text-xs text-gray-600">7.5-15% падения</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-4 rounded border-2 border-gray-400" style={{ backgroundColor: 'rgba(239, 68, 68, 0.6)' }}></div>
+                  <span className="text-xs text-gray-600">15%+ падения</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Статистика */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {hasAudioBlocks && (
+                <div className="bg-white p-4 rounded-lg border border-green-200 shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-4 h-4 bg-green-500 rounded border border-green-600"></div>
+                    <h4 className="font-semibold text-gray-900">Аудио блоки</h4>
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {analysis.audioAnalysis?.groups?.length || 0} блоков на таймлайне
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Общее время: {(analysis.audioAnalysis?.groups || []).reduce((total, block) => total + (block.endTime - block.startTime), 0).toFixed(1)}с
+                  </div>
+                </div>
+              )}
+              
+              {hasTextBlocks && (
+                <div className="bg-white p-4 rounded-lg border border-blue-200 shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-4 h-4 bg-blue-500 rounded border border-blue-600"></div>
+                    <h4 className="font-semibold text-gray-900">Текстовые блоки</h4>
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {analysis.textualVisualAnalysis?.groups?.length || 0} блоков на таймлайне
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Общее время: {(analysis.textualVisualAnalysis?.groups || []).reduce((total, block) => total + (block.endTime - block.startTime), 0).toFixed(1)}с
+                  </div>
+                </div>
+              )}
+              
+              {hasVisualBlocks && (
+                <div className="bg-white p-4 rounded-lg border border-purple-200 shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-4 h-4 bg-purple-500 rounded border border-purple-600"></div>
+                    <h4 className="font-semibold text-gray-900">Визуальные блоки</h4>
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {analysis.visualAnalysis?.groups?.length || 0} блоков на таймлайне
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Общее время: {(analysis.visualAnalysis?.groups || []).reduce((total, block) => total + (block.endTime - block.startTime), 0).toFixed(1)}с
+                  </div>
+                </div>
+              )}
+              
+              {hasScreenshots && (
+                <div className="bg-white p-4 rounded-lg border border-orange-200 shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-4 h-4 bg-orange-500 rounded border border-orange-600"></div>
+                    <h4 className="font-semibold text-gray-900">Скриншоты 🎬</h4>
+                    {screenshotsLoading && (
+                      <div className="w-3 h-3 border border-orange-300 border-t-orange-600 rounded-full animate-spin"></div>
+                    )}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {analysis.visualAnalysis?.screenshots?.length || 0} кадров в стиле киноленты
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    {screenshotsLoading ? 'Загрузка путей к файлам...' : 
+                     Object.keys(screenshotPaths).length > 0 ? 'Наведите для превью • Кликните для переключения' : 
+                     'Файлы скриншотов не найдены'}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Сводка */}
+            <div className="p-4 bg-gray-50 rounded-lg border">
+              <div className="text-sm text-gray-700">
+                <span className="font-medium">Треков используется:</span> {3 + (hasScreenshots ? 1 : 0)} • 
+                <span className="font-medium ml-2">Блоков отображено:</span> {blocksWithTracks.length} из {
+                  (analysis.audioAnalysis?.groups?.length || 0) + 
+                  (analysis.textualVisualAnalysis?.groups?.length || 0) + 
+                  (analysis.visualAnalysis?.groups?.length || 0)
+                } общих • 
+                {hasScreenshots && (
+                  <>
+                    <span className="font-medium ml-2">Скриншотов:</span> {analysis.visualAnalysis?.screenshots?.length || 0} • 
+                  </>
+                )}
+                <span className="font-medium ml-2">Проблемных блоков:</span> <span className="text-red-600 font-bold">{highlightedBlocks.size}</span> • 
+                <span className="font-medium ml-2">Общая длительность:</span> {formatTime(maxDuration)}
+              </div>
+              {highlightedBlocks.size > 0 && (
+                <div className="mt-2 text-xs text-orange-600">
+                  🎯 Цветным фоном выделены блоки с наивысшей скоростью падения в каждом треке (зеленый = низкое падение, красный = критическое)
+                </div>
+              )}
+              {hasScreenshots && (
+                <div className="mt-2 text-xs text-orange-600">
+                  🎬 {screenshotsLoading ? 'Загружаем кадры киноленты...' : 
+                      Object.keys(screenshotPaths).length > 0 ? 'Кадры в стиле киноленты с перфорацией • Наведите для превью • Кликните для увеличения' :
+                      'Кадры из визуального анализа (файлы не найдены на сервере)'}
+                </div>
+              )}
+            </div>
+
+            {/* Предупреждения */}
+            {blocksWithTracks.length === 0 && (hasAudioBlocks || hasTextBlocks || hasVisualBlocks) && (
+              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div className="text-sm text-yellow-800">
+                  ⚠️ Нет блоков для отображения с выбранными фильтрами.
+                </div>
+              </div>
+            )}
+            
+            {!hasAudioBlocks && !hasTextBlocks && !hasVisualBlocks && !hasScreenshots && (
+              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div className="text-sm text-yellow-800">
+                  ⚠️ Все треки скрыты. Включите хотя бы один трек для отображения на таймлайне.
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Превью скриншота при наведении */}
+      {hoveredScreenshot && (
+        <div 
+          className="fixed z-[100]"
+          style={{ 
+            left: `${hoveredScreenshot.x}px`, 
+            top: `${hoveredScreenshot.y}px`,
+            transform: 'translateY(-50%)'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="bg-white border-2 border-orange-400 rounded-lg shadow-2xl overflow-hidden max-w-sm">
+            {/* Заголовок превью */}
+            <div className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-3 py-2">
+              <div className="flex items-center gap-2 text-sm font-bold">
+                <span>🎬</span>
+                <span>Кадр {formatTime(hoveredScreenshot.timestamp)}</span>
+              </div>
+            </div>
+            
+            {/* Изображение */}
+            <div className="relative">
+              <a 
+                href={hoveredScreenshot.imagePath}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block cursor-zoom-in"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <img 
+                  src={hoveredScreenshot.imagePath} 
+                  alt="Screenshot preview"
+                  className="w-full h-auto max-w-sm max-h-64 object-contain bg-black hover:brightness-110 transition-all"
+                  style={{ minWidth: '200px', minHeight: '120px' }}
+                />
+              </a>
+              
+              {/* Описание поверх изображения */}
+              {(() => {
+                const screenshot = analysis.visualAnalysis?.screenshots?.find(
+                  s => s.timestamp === hoveredScreenshot.timestamp
+                );
+                return screenshot?.description && (
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/70 to-transparent p-4">
+                    <p className="text-white text-sm leading-relaxed font-medium">
+                      {screenshot.description}
+                    </p>
+                  </div>
+                );
+              })()}
+            </div>
+            
+            {/* Дополнительная информация */}
+                          <div className="bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                <div className="flex justify-between items-center">
+                  
+                  <span className="text-orange-600 font-medium">Кликните для переключения</span>
+                </div>
+              </div>
+          </div>
+        </div>
+      )}
+
       {/* Абсолютно позиционированная информация о выделенном блоке */}
       {selectedBlock && (() => {
         const block: BlockWithTrack | undefined = blocksWithTracks.find(b => b.id === selectedBlock);
@@ -435,7 +743,7 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
         
         if (!block) return null;
         
-        const blockY = 20 + block.startTime * pixelsPerSecond + 400;
+        const blockY = 20 + block.startTime * pixelsPerSecond;
         
         // Вычисляем среднюю скорость относительного падения под блоком
         const calculateAverageRelativeDropout = () => {
@@ -580,777 +888,568 @@ const VerticalRetentionTimeline: React.FC<VerticalRetentionTimelineProps> = ({
       })()}
 
       <div>
+        {/* Кнопка справки в верхнем правом углу */}
+        <div className="absolute top-0 right-0 z-20">
+          <button
+            onClick={() => setShowInfoTooltip(!showInfoTooltip)}
+            className="bg-blue-500 hover:bg-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center shadow-lg transition-colors"
+            title="Справка по таймлайну"
+          >
+            <span className="text-sm font-bold">?</span>
+          </button>
+        </div>
+
         {/* Таймлайн */}
         <div>
-          {/* Информационная панель */}
-          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="flex items-start gap-3">
-              <div className="text-blue-600 mt-0.5">⏱️</div>
-              <div className="text-sm text-blue-800">
-                <span className="font-medium">Вертикальный таймлайн:</span> Время идет сверху вниз. 
-                Блоки размещены по трекам, высота блока = их длительность. 
-                Кликните на блок для детальной информации в четвертом треке.
-                <br />
-                <span className="font-medium">Автовыделение:</span> Блоки с цветным фоном имеют наивысшую скорость падения в своем треке (исключая первые 6 и последние 5 секунд). Цвет фона показывает интенсивность падения.
-                <br />
-                <span className="font-medium">Фон таймлайна:</span> Интенсивность цвета показывает относительное падение удержания - 
-                какой процент от текущей аудитории теряется на каждом участке.
-              </div>
-            </div>
-          </div>
-
-      {/* Легенда интенсивности падения */}
-      <div className="mb-6 p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
-        <h4 className="text-sm font-semibold text-gray-800 mb-3">Относительное падение удержания</h4>
-        <div className="text-xs text-gray-600 mb-3">
-          Цвет показывает, какой процент от текущей аудитории потерян на каждом участке времени
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-4 bg-transparent border border-gray-300 rounded"></div>
-            <span className="text-xs text-gray-600">0-1%</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-4 rounded" style={{ backgroundColor: getDropoutIntensityColor(0.05) }}></div>
-            <span className="text-xs text-gray-600">1-5%</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-4 rounded" style={{ backgroundColor: getDropoutIntensityColor(0.2) }}></div>
-            <span className="text-xs text-gray-600">5-15%</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-4 rounded" style={{ backgroundColor: getDropoutIntensityColor(0.4) }}></div>
-            <span className="text-xs text-gray-600">15-25%</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-4 rounded" style={{ backgroundColor: getDropoutIntensityColor(0.65) }}></div>
-            <span className="text-xs text-gray-600">25-40%</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-4 rounded" style={{ backgroundColor: getDropoutIntensityColor(0.9) }}></div>
-            <span className="text-xs text-gray-600">40%+</span>
-          </div>
-        </div>
-        <div className="text-xs text-gray-500 mt-2 italic">
-          Пример: если удержание упало с 20% до 10%, то относительное падение = 50% (потеряли половину оставшейся аудитории)
-        </div>
-      </div>
-
-      {/* Легенда выделения проблемных блоков */}
-      <div className="mb-6 p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
-        <h4 className="text-sm font-semibold text-gray-800 mb-3">Выделение проблемных блоков</h4>
-        <div className="text-xs text-gray-600 mb-3">
-          Блоки с наивысшей скоростью падения в каждом треке выделяются цветным фоном
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-4 rounded border-2 border-gray-400" style={{ backgroundColor: 'rgba(34, 197, 94, 0.3)' }}></div>
-            <span className="text-xs text-gray-600">1-2.5% падения</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-4 rounded border-2 border-gray-400" style={{ backgroundColor: 'rgba(245, 158, 11, 0.4)' }}></div>
-            <span className="text-xs text-gray-600">2.5-7.5% падения</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-4 rounded border-2 border-gray-400" style={{ backgroundColor: 'rgba(249, 115, 22, 0.5)' }}></div>
-            <span className="text-xs text-gray-600">7.5-15% падения</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-4 rounded border-2 border-gray-400" style={{ backgroundColor: 'rgba(239, 68, 68, 0.6)' }}></div>
-            <span className="text-xs text-gray-600">15%+ падения</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Интерактивная легенда с фильтрами */}
-      <div className="mb-6 p-4 bg-white rounded-lg border shadow-sm">
-        <div className="flex flex-wrap gap-6">
-          {hasAudioBlocks && (
-            <label className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-3 rounded-lg transition-colors">
-              <input
-                type="checkbox"
-                checked={showAudio}
-                onChange={(e) => setShowAudio(e.target.checked)}
-                className="w-5 h-5 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500 focus:ring-2"
-              />
-              <div className="w-5 h-5 bg-green-500 rounded border border-green-600"></div>
-              <span className="text-sm font-medium text-gray-700">
-                Аудио блоки ({analysis.audioAnalysis?.groups?.length || 0})
-              </span>
-            </label>
-          )}
-          
-          {hasTextBlocks && (
-            <label className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-3 rounded-lg transition-colors">
-              <input
-                type="checkbox"
-                checked={showText}
-                onChange={(e) => setShowText(e.target.checked)}
-                className="w-5 h-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-              />
-              <div className="w-5 h-5 bg-blue-500 rounded border border-blue-600"></div>
-              <span className="text-sm font-medium text-gray-700">
-                Текстовые блоки ({analysis.textualVisualAnalysis?.groups?.length || 0})
-              </span>
-            </label>
-          )}
-          
-          {hasVisualBlocks && (
-            <label className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-3 rounded-lg transition-colors">
-              <input
-                type="checkbox"
-                checked={showVisual}
-                onChange={(e) => setShowVisual(e.target.checked)}
-                className="w-5 h-5 text-purple-600 bg-gray-100 border-gray-300 rounded focus:ring-purple-500 focus:ring-2"
-              />
-              <div className="w-5 h-5 bg-purple-500 rounded border border-purple-600"></div>
-              <span className="text-sm font-medium text-gray-700">
-                Визуальные блоки ({analysis.visualAnalysis?.groups?.length || 0})
-              </span>
-            </label>
-          )}
-          
-          {hasScreenshots && (
-            <label className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-3 rounded-lg transition-colors">
-              <input
-                type="checkbox"
-                checked={showScreenshots}
-                onChange={(e) => setShowScreenshots(e.target.checked)}
-                className="w-5 h-5 text-orange-600 bg-gray-100 border-gray-300 rounded focus:ring-orange-500 focus:ring-2"
-              />
-              <div className="w-5 h-5 bg-orange-500 rounded border border-orange-600"></div>
-              <span className="text-sm font-medium text-gray-700">
-                Скриншоты ({analysis.visualAnalysis?.screenshots?.length || 0})
-              </span>
-            </label>
-          )}
-        </div>
-        
-        {/* Кнопки быстрого управления */}
-        <div className="flex gap-3 mt-4">
-          <button
-            onClick={() => {
-              setShowAudio(true);
-              setShowText(true);
-              setShowVisual(true);
-              setShowScreenshots(true);
-            }}
-            className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors font-medium"
-          >
-            Показать все
-          </button>
-          <button
-            onClick={() => {
-              setShowAudio(false);
-              setShowText(false);
-              setShowVisual(false);
-              setShowScreenshots(false);
-            }}
-            className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors font-medium"
-          >
-            Скрыть все
-          </button>
-        </div>
-      </div>
-
-          {/* Основной таймлайн */}
           <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden w-full">
             <div className="overflow-x-auto w-full">
-              <div className="relative" style={{ width: Math.max(timelineWidth, 1200), height: timelineHeight }}>
+              <div className="relative" style={{ width: timelineWidth, height: timelineHeight }}>
                 <svg 
-                  width={Math.max(timelineWidth, 1200)} 
+                  width={timelineWidth} 
                   height={timelineHeight}
                   className="block"
                 >
-              {/* Вертикальная линия временной шкалы */}
-              <line 
-                x1={timeAxisWidth} 
-                y1={20} 
-                x2={timeAxisWidth} 
-                y2={timelineHeight - 20} 
-                stroke="#374151" 
-                strokeWidth="2"
-              />
-
-              {/* Фоновые полосы интенсивности падения */}
-              {timeMarks.slice(0, -1).map((time, index) => {
-                const nextTime = timeMarks[index + 1];
-                const y = 20 + time * pixelsPerSecond;
-                const height = (nextTime - time) * pixelsPerSecond;
-                const midTime = time + (nextTime - time) / 2;
-                const relativeIntensity = getRelativeDropoutRate(midTime);
-                const intensityColor = getDropoutIntensityColor(relativeIntensity);
-                
-                return (
-                  <g key={`intensity-${time}`}>
-                    {/* Фон для временной шкалы */}
-                    <rect
-                      x={0}
-                      y={y}
-                      width={timeAxisWidth}
-                      height={height}
-                      fill={intensityColor}
-                      opacity="0.3"
-                      className="pointer-events-none"
-                    />
-                    {/* Фон для треков */}
-                    <rect
-                      x={timeAxisWidth}
-                      y={y}
-                      width={Math.max(timelineWidth, 1200) - timeAxisWidth}
-                      height={height}
-                      fill={intensityColor}
-                      className="pointer-events-none"
-                    />
-                  </g>
-                );
-              })}
-
-              {/* Горизонтальные линии для временных меток */}
-              {timeMarks.map(time => {
-                const y = 20 + time * pixelsPerSecond;
-                const retention = getRetentionAtTime(time);
-                const dropoutRate = getDropoutRateAtTime(time);
-                
-                return (
-                  <g key={`time-${time}`}>
-                    {/* Линия временной метки */}
-                    <line 
-                      x1={timeAxisWidth - 5} 
-                      y1={y} 
-                      x2={Math.max(timelineWidth, 1200)} 
-                      y2={y} 
-                      stroke="#E5E7EB" 
-                      strokeWidth="1"
-                      strokeDasharray="2,4"
-                    />
-                    
-                    {/* Время */}
-                    <text 
-                      x={timeAxisWidth - 10} 
-                      y={y - 15} 
-                      textAnchor="end" 
-                      className="text-sm fill-gray-800 font-bold"
-                    >
-                      {formatTime(time)}
-                    </text>
-                    
-                    {/* Процент удержания */}
-                    <text 
-                      x={timeAxisWidth - 10} 
-                      y={y} 
-                      textAnchor="end" 
-                      className="text-xs fill-gray-600"
-                    >
-                      {retention.toFixed(0)}%
-                    </text>
-                    
-                    {/* Относительное падение */}
-                    <text 
-                      x={timeAxisWidth - 10} 
-                      y={y + 12} 
-                      textAnchor="end" 
-                      className="text-xs fill-red-600 font-medium"
-                    >
-                      {(() => {
-                        const intervalSize = 0.5;
-                        const startTime = Math.max(0, time - intervalSize / 2);
-                        const endTime = Math.min(maxDuration, time + intervalSize / 2);
-                        const relativeDrop = getRelativeDropoutBetweenPoints(startTime, endTime);
-                        
-                        if (relativeDrop > 2) {
-                          return `-${relativeDrop.toFixed(0)}%`;
-                        }
-                        return '';
-                      })()}
-                    </text>
-                  </g>
-                );
-              })}
-
-              {/* Вертикальные линии разделения треков */}
-              {Array.from({length: 6}).map((_, trackIndex) => {
-                let x;
-                if (trackIndex <= 3) {
-                  // Линии для первых 3 треков + начало трека скриншотов
-                  x = timeAxisWidth + trackIndex * trackWidth;
-                } else if (trackIndex === 4) {
-                  // Линия после трека скриншотов
-                  x = timeAxisWidth + 3 * trackWidth + screenshotsTrackWidth;
-                } else {
-                  // Линия после информационного блока
-                  x = timeAxisWidth + 3 * trackWidth + screenshotsTrackWidth + trackWidth;
-                }
-                
-                return (
+                  {/* Вертикальная линия временной шкалы */}
                   <line 
-                    key={`track-divider-${trackIndex}`}
-                    x1={x} 
+                    x1={timeAxisWidth} 
                     y1={20} 
-                    x2={x} 
+                    x2={timeAxisWidth} 
                     y2={timelineHeight - 20} 
-                    stroke="#E5E7EB" 
-                    strokeWidth="1"
+                    stroke="#374151" 
+                    strokeWidth="2"
                   />
-                );
-              })}
 
-              {/* Блоки */}
-              {blocksWithTracks.map((block) => {
-                const x = timeAxisWidth + block.trackIndex * trackWidth + 10;
-                const y = 20 + block.startTime * pixelsPerSecond;
-                const width = trackWidth - 20;
-                const height = Math.max((block.endTime - block.startTime) * pixelsPerSecond, 60); // Минимальная высота 60px
-
-                const blockAnalysis = analysis.blockDropoutAnalysis?.find?.(
-                  (ba: BlockDropoutAnalysis) => ba.blockId === block.id
-                );
-
-                // Вычисляем среднюю скорость относительного падения для блока
-                const calculateBlockDropoutRate = () => {
-                  const samplePoints = 5;
-                  const stepSize = (block.endTime - block.startTime) / samplePoints;
-                  let totalRelativeDropout = 0;
-                  
-                  for (let i = 0; i < samplePoints; i++) {
-                    const sampleTime = block.startTime + i * stepSize;
-                    const relativeDropout = getRelativeDropoutRate(sampleTime);
-                    totalRelativeDropout += relativeDropout;
-                  }
-                  
-                  return totalRelativeDropout / samplePoints;
-                };
-
-                const isSelected = selectedBlock === block.id;
-                const isHighlighted = highlightedBlocks.has(block.id);
-                const blockDropoutRate = calculateBlockDropoutRate();
-
-                // Функция для получения цвета фона блока на основе скорости падения
-                const getBlockBackgroundColor = (dropoutRate: number, isHighlighted: boolean) => {
-                  if (!isHighlighted) {
-                    return 'rgba(9, 9, 9, 0.5)'; // Серые блоки с прозрачностью для обычных блоков
-                  }
-                  
-                  // Проблемные блоки получают цвет в зависимости от скорости падения
-                  if (dropoutRate < 0.05) {
-                    return 'rgba(34, 197, 94, 0.8)'; // Зеленый для минимального падения
-                  } else if (dropoutRate < 0.15) {
-                    return 'rgba(245, 81, 11, 0.8)'; // Желтый для небольшого падения
-                  } else if (dropoutRate < 0.3) {
-                    return 'rgba(188, 41, 41, 0.76)'; // Оранжевый для заметного падения
-                  } else {
-                    return 'rgba(239, 68, 68, 0.8)'; // Красный для критического падения
-                  }
-                };
-
-                const blockBackgroundColor = getBlockBackgroundColor(blockDropoutRate, isHighlighted);
-                
-                return (
-                  <g 
-                    key={`${block.blockType}-${block.id}`}
-                    className="cursor-pointer"
-                    onClick={() => handleBlockClick(block)}
-                  >
-                    {/* Тень для выделенного блока */}
-                    {isSelected && (
-                      <rect
-                        x={x - 3}
-                        y={y - 3}
-                        width={width + 6}
-                        height={height + 6}
-                        fill="none"
-                        stroke="#FCD34D"
-                        strokeWidth="3"
-                        rx="8"
-                        opacity="0.8"
-                      />
-                    )}
+                  {/* Фоновые полосы интенсивности падения */}
+                  {timeMarks.slice(0, -1).map((time, index) => {
+                    const nextTime = timeMarks[index + 1];
+                    const y = 20 + time * pixelsPerSecond;
+                    const height = (nextTime - time) * pixelsPerSecond;
+                    const midTime = time + (nextTime - time) / 2;
+                    const relativeIntensity = getRelativeDropoutRate(midTime);
+                    const intensityColor = getDropoutIntensityColor(relativeIntensity);
                     
-                    {/* Основной блок */}
-                    <rect
-                      x={x}
-                      y={y}
-                      width={width}
-                      height={height}
-                      fill={blockBackgroundColor}
-                      stroke={block.borderColor}
-                      strokeWidth="2"
-                      rx="6"
-                      className="hover:opacity-80 transition-opacity"
-                    />
+                    return (
+                      <g key={`intensity-${time}`}>
+                        {/* Фон для временной шкалы */}
+                        <rect
+                          x={0}
+                          y={y}
+                          width={timeAxisWidth}
+                          height={height}
+                          fill={intensityColor}
+                          opacity="0.3"
+                          className="pointer-events-none"
+                        />
+                        {/* Фон для треков */}
+                        <rect
+                          x={timeAxisWidth}
+                          y={y}
+                          width={timelineWidth - timeAxisWidth}
+                          height={height}
+                          fill={intensityColor}
+                          className="pointer-events-none"
+                        />
+                      </g>
+                    );
+                  })}
+
+                  {/* Горизонтальные линии для временных меток */}
+                  {timeMarks.map(time => {
+                    const y = 20 + time * pixelsPerSecond;
+                    const retention = getRetentionAtTime(time);
+                    const dropoutRate = getDropoutRateAtTime(time);
                     
-                    {(() => {
-                      // Разбиваем текст на 5 строк
-                      const maxCharsPerLine = Math.floor((width - 16) / 9); // Примерно 9px на символ для крупного шрифта
-                      const words = block.name.split(' ');
-                      const lines = ['', '', '', '', ''];
-                      let currentLineIndex = 0;
-                      
-                      // Распределяем слова по строкам
-                      for (const word of words) {
-                        if (currentLineIndex >= 5) break; // Максимум 5 строк
+                    return (
+                      <g key={`time-${time}`}>
+                        {/* Линия временной метки */}
+                        <line 
+                          x1={timeAxisWidth - 5} 
+                          y1={y} 
+                          x2={timelineWidth} 
+                          y2={y} 
+                          stroke="#E5E7EB" 
+                          strokeWidth="1"
+                          strokeDasharray="2,4"
+                        />
                         
-                        if ((lines[currentLineIndex] + ' ' + word).length <= maxCharsPerLine) {
-                          lines[currentLineIndex] += (lines[currentLineIndex] ? ' ' : '') + word;
-                        } else {
-                          currentLineIndex++;
-                          if (currentLineIndex < 5) {
-                            lines[currentLineIndex] = word;
-                          } else {
-                            // Если не помещается в 5 строк, добавляем многоточие
-                            if (lines[4].length > maxCharsPerLine - 3) {
-                              lines[4] = lines[4].substring(0, maxCharsPerLine - 3) + '...';
-                            } else {
-                              lines[4] += '...';
+                        {/* Время */}
+                        <text 
+                          x={timeAxisWidth - 10} 
+                          y={y - 15} 
+                          textAnchor="end" 
+                          className="text-sm fill-gray-800 font-bold"
+                        >
+                          {formatTime(time)}
+                        </text>
+                        
+                        {/* Процент удержания */}
+                        <text 
+                          x={timeAxisWidth - 10} 
+                          y={y} 
+                          textAnchor="end" 
+                          className="text-xs fill-gray-600"
+                        >
+                          {retention.toFixed(0)}%
+                        </text>
+                        
+                        {/* Относительное падение */}
+                        <text 
+                          x={timeAxisWidth - 10} 
+                          y={y + 12} 
+                          textAnchor="end" 
+                          className="text-xs fill-red-600 font-medium"
+                        >
+                          {(() => {
+                            const intervalSize = 0.5;
+                            const startTime = Math.max(0, time - intervalSize / 2);
+                            const endTime = Math.min(maxDuration, time + intervalSize / 2);
+                            const relativeDrop = getRelativeDropoutBetweenPoints(startTime, endTime);
+                            
+                            if (relativeDrop > 2) {
+                              return `-${relativeDrop.toFixed(0)}%`;
                             }
-                            break;
-                          }
-                        }
+                            return '';
+                          })()}
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  {/* Вертикальные линии разделения треков */}
+                  {Array.from({length: 6}).map((_, trackIndex) => {
+                    let x;
+                    if (trackIndex <= 3) {
+                      // Линии для первых 3 треков + начало трека скриншотов
+                      x = timeAxisWidth + trackIndex * trackWidth;
+                    } else if (trackIndex === 4) {
+                      // Линия после трека скриншотов
+                      x = timeAxisWidth + 3 * trackWidth + screenshotsTrackWidth;
+                    } else {
+                      // Линия после информационного блока
+                      x = timeAxisWidth + 3 * trackWidth + screenshotsTrackWidth + trackWidth;
+                    }
+                    
+                    return (
+                      <line 
+                        key={`track-divider-${trackIndex}`}
+                        x1={x} 
+                        y1={20} 
+                        x2={x} 
+                        y2={timelineHeight - 20} 
+                        stroke="#E5E7EB" 
+                        strokeWidth="1"
+                      />
+                    );
+                  })}
+
+                  {/* Блоки */}
+                  {blocksWithTracks.map((block) => {
+                    const x = timeAxisWidth + block.trackIndex * trackWidth + 10;
+                    const y = 20 + block.startTime * pixelsPerSecond;
+                    const width = trackWidth - 20;
+                    const height = Math.max((block.endTime - block.startTime) * pixelsPerSecond, 60); // Минимальная высота 60px
+
+                    const blockAnalysis = analysis.blockDropoutAnalysis?.find?.(
+                      (ba: BlockDropoutAnalysis) => ba.blockId === block.id
+                    );
+
+                    // Вычисляем среднюю скорость относительного падения для блока
+                    const calculateBlockDropoutRate = () => {
+                      const samplePoints = 5;
+                      const stepSize = (block.endTime - block.startTime) / samplePoints;
+                      let totalRelativeDropout = 0;
+                      
+                      for (let i = 0; i < samplePoints; i++) {
+                        const sampleTime = block.startTime + i * stepSize;
+                        const relativeDropout = getRelativeDropoutRate(sampleTime);
+                        totalRelativeDropout += relativeDropout;
                       }
                       
-                      // Убираем пустые строки в конце
-                      const actualLines = lines.filter(line => line.length > 0);
-                      const textHeight = actualLines.length * 18 + 8; // 18px на строку + отступы
-                      const maxLineWidth = Math.max(...actualLines.map(line => line.length)) * 9;
+                      return totalRelativeDropout / samplePoints;
+                    };
+
+                    const isSelected = selectedBlock === block.id;
+                    const isHighlighted = highlightedBlocks.has(block.id);
+                    const blockDropoutRate = calculateBlockDropoutRate();
+
+                    // Функция для получения цвета фона блока на основе скорости падения
+                    const getBlockBackgroundColor = (dropoutRate: number, isHighlighted: boolean) => {
+                      if (!isHighlighted) {
+                        return 'rgba(9, 9, 9, 0.5)'; // Серые блоки с прозрачностью для обычных блоков
+                      }
                       
-                      return (
-                        <>
-                          {/* Подложка под текст */}
-                          <rect
-                            x={x + 4}
-                            y={y + 4}
-                            width={Math.min(maxLineWidth + 8, width - 8)}
-                            height={textHeight}
-                            fill="rgba(0, 0, 0, 0.7)"
-                            rx="4"
-                          />
-                          
-                          {/* Название блока - все строки */}
-                          {actualLines.map((line, index) => (
-                            <text
-                              key={index}
-                              x={x + 8}
-                              y={y + 18 + index * 18}
-                              fill="white"
-                              fontSize="14"
-                              fontWeight="bold"
-                              textAnchor="start"
-                            >
-                              {line}
-                            </text>
-                          ))}
-                        </>
-                      );
-                    })()}
+                      // Проблемные блоки получают цвет в зависимости от скорости падения
+                      if (dropoutRate < 0.05) {
+                        return 'rgba(34, 197, 94, 0.8)'; // Зеленый для минимального падения
+                      } else if (dropoutRate < 0.15) {
+                        return 'rgba(245, 81, 11, 0.8)'; // Желтый для небольшого падения
+                      } else if (dropoutRate < 0.3) {
+                        return 'rgba(188, 41, 41, 0.76)'; // Оранжевый для заметного падения
+                      } else {
+                        return 'rgba(239, 68, 68, 0.8)'; // Красный для критического падения
+                      }
+                    };
+
+                    const blockBackgroundColor = getBlockBackgroundColor(blockDropoutRate, isHighlighted);
                     
-                    {/* Время блока */}
-                    <text
-                      x={x + width / 2}
-                      y={y + height - 25}
-                      textAnchor="middle"
-                      className="text-xs fill-white pointer-events-none opacity-90"
-                      style={{ fontSize: '10px' }}
-                    >
-                      {formatTime(block.startTime)} - {formatTime(block.endTime)}
-                    </text>
-
-                    {/* Длительность */}
-                    <text
-                      x={x + width / 2}
-                      y={y + height - 10}
-                      textAnchor="middle"
-                      className="text-xs fill-white pointer-events-none font-bold"
-                      style={{ fontSize: '10px' }}
-                    >
-                      {(block.endTime - block.startTime).toFixed(1)}с
-                    </text>
-
-                    {/* Индикатор удержания */}
-                    {blockAnalysis && height > 80 && (
-                      <text
-                        x={x + width / 2}
-                        y={y + height - 40}
-                        textAnchor="middle"
-                        className="text-xs fill-white pointer-events-none font-bold"
-                        style={{ fontSize: '9px' }}
+                    return (
+                      <g 
+                        key={`${block.blockType}-${block.id}`}
+                        className="cursor-pointer"
+                        onClick={() => handleBlockClick(block)}
                       >
-                        {blockAnalysis.startRetention.toFixed(0)}% → {blockAnalysis.endRetention.toFixed(0)}%
-                      </text>
-                    )}
-                  </g>
-                );
-              })}
-
-              {/* Скриншоты из визуального анализа */}
-              {showScreenshots && analysis.visualAnalysis?.screenshots?.map((screenshot, index) => {
-                const x = timeAxisWidth + 3 * trackWidth + 10; // Позиция в треке скриншотов
-                const y = 20 + screenshot.timestamp * pixelsPerSecond;
-                const screenshotWidth = screenshotsTrackWidth - 20;
-                const screenshotHeight = 80; // Увеличиваем высоту для лучшего отображения
-                
-                const imagePath = getScreenshotPath(screenshot.timestamp);
-                
-                return (
-                  <g key={`screenshot-${index}`}>
-                    {/* Фон для скриншота */}
-                    <rect
-                      x={x}
-                      y={y}
-                      width={screenshotWidth}
-                      height={screenshotHeight}
-                      fill="white"
-                      stroke="#E5E7EB"
-                      strokeWidth="1"
-                      rx="4"
-                      className="cursor-pointer hover:stroke-orange-400"
-                      onClick={() => {
-                        // Открываем скриншот в новом окне
-                        window.open(imagePath, '_blank');
-                      }}
-                    />
-                    
-                    {/* Реальное изображение скриншота */}
-                    {screenshotsLoading ? (
-                      <>
-                        {/* Индикатор загрузки */}
+                        {/* Тень для выделенного блока */}
+                        {isSelected && (
+                          <rect
+                            x={x - 3}
+                            y={y - 3}
+                            width={width + 6}
+                            height={height + 6}
+                            fill="none"
+                            stroke="#FCD34D"
+                            strokeWidth="3"
+                            rx="8"
+                            opacity="0.8"
+                          />
+                        )}
+                        
+                        {/* Основной блок */}
                         <rect
-                          x={x + 2}
-                          y={y + 2}
-                          width={screenshotWidth - 4}
-                          height={screenshotHeight - 20}
-                          fill="#F9FAFB"
-                          stroke="#E5E7EB"
-                          strokeWidth="1"
-                          rx="2"
+                          x={x}
+                          y={y}
+                          width={width}
+                          height={height}
+                          fill={blockBackgroundColor}
+                          stroke={block.borderColor}
+                          strokeWidth="2"
+                          rx="6"
+                          className="hover:opacity-80 transition-opacity"
                         />
                         
+                        {(() => {
+                          // Разбиваем текст на 5 строк
+                          const maxCharsPerLine = Math.floor((width - 16) / 7); // Примерно 7px на символ для более узких треков
+                          const words = block.name.split(' ');
+                          const lines = ['', '', '', '', ''];
+                          let currentLineIndex = 0;
+                          
+                          // Распределяем слова по строкам
+                          for (const word of words) {
+                            if (currentLineIndex >= 5) break; // Максимум 5 строк
+                            
+                            if ((lines[currentLineIndex] + ' ' + word).length <= maxCharsPerLine) {
+                              lines[currentLineIndex] += (lines[currentLineIndex] ? ' ' : '') + word;
+                            } else {
+                              currentLineIndex++;
+                              if (currentLineIndex < 5) {
+                                lines[currentLineIndex] = word;
+                              } else {
+                                // Если не помещается в 5 строк, добавляем многоточие
+                                if (lines[4].length > maxCharsPerLine - 3) {
+                                  lines[4] = lines[4].substring(0, maxCharsPerLine - 3) + '...';
+                                } else {
+                                  lines[4] += '...';
+                                }
+                                break;
+                              }
+                            }
+                          }
+                          
+                          // Убираем пустые строки в конце
+                          const actualLines = lines.filter(line => line.length > 0);
+                          const textHeight = actualLines.length * 16 + 8; // 16px на строку + отступы
+                          const maxLineWidth = Math.max(...actualLines.map(line => line.length)) * 7;
+                          
+                          return (
+                            <>
+                              {/* Подложка под текст */}
+                              <rect
+                                x={x + 4}
+                                y={y + 4}
+                                width={Math.min(maxLineWidth + 8, width - 8)}
+                                height={textHeight}
+                                fill="rgba(0, 0, 0, 0.7)"
+                                rx="4"
+                              />
+                              
+                              {/* Название блока - все строки */}
+                              {actualLines.map((line, index) => (
+                                <text
+                                  key={index}
+                                  x={x + 8}
+                                  y={y + 16 + index * 16}
+                                  fill="white"
+                                  fontSize="12"
+                                  fontWeight="bold"
+                                  textAnchor="start"
+                                >
+                                  {line}
+                                </text>
+                              ))}
+                            </>
+                          );
+                        })()}
+                        
+                        {/* Время блока */}
                         <text
-                          x={x + screenshotWidth / 2}
-                          y={y + (screenshotHeight - 20) / 2 + 2}
+                          x={x + width / 2}
+                          y={y + height - 25}
                           textAnchor="middle"
-                          className="text-xs fill-gray-500"
+                          className="text-xs fill-white pointer-events-none opacity-90"
                           style={{ fontSize: '10px' }}
                         >
-                          Загрузка...
+                          {formatTime(block.startTime)} - {formatTime(block.endTime)}
                         </text>
-                      </>
-                    ) : imagePath ? (
-                      <image
-                        x={x + 2}
-                        y={y + 2}
-                        width={screenshotWidth - 4}
-                        height={screenshotHeight - 20}
-                        href={imagePath}
-                        preserveAspectRatio="xMidYMid slice"
-                        className="cursor-pointer hover:opacity-80"
-                        onClick={() => {
-                          window.open(imagePath, '_blank');
-                        }}
-                      />
-                    ) : (
-                      <>
-                        {/* Fallback placeholder если путь к изображению не найден */}
+
+                        {/* Длительность */}
+                        <text
+                          x={x + width / 2}
+                          y={y + height - 10}
+                          textAnchor="middle"
+                          className="text-xs fill-white pointer-events-none font-bold"
+                          style={{ fontSize: '10px' }}
+                        >
+                          {(block.endTime - block.startTime).toFixed(1)}с
+                        </text>
+
+                        {/* Индикатор удержания */}
+                        {blockAnalysis && height > 80 && (
+                          <text
+                            x={x + width / 2}
+                            y={y + height - 40}
+                            textAnchor="middle"
+                            className="text-xs fill-white pointer-events-none font-bold"
+                            style={{ fontSize: '9px' }}
+                          >
+                            {blockAnalysis.startRetention.toFixed(0)}% → {blockAnalysis.endRetention.toFixed(0)}%
+                          </text>
+                        )}
+                      </g>
+                    );
+                  })}
+
+                  {/* Скриншоты из визуального анализа */}
+                  {analysis.visualAnalysis?.screenshots?.map((screenshot, index) => {
+                    const x = timeAxisWidth + 3 * trackWidth + 10; // Позиция в треке скриншотов
+                    const y = 20 + screenshot.timestamp * pixelsPerSecond;
+                    const screenshotWidth = screenshotsTrackWidth - 20;
+                    const screenshotHeight = 80; // Увеличиваем высоту для лучшего отображения
+                    
+                    const imagePath = getScreenshotPath(screenshot.timestamp);
+                    
+                    return (
+                      <g key={`screenshot-${index}`}>
+                        {/* Стилизация под пленку камеры - перфорация слева */}
+                        <g>
+                          {/* Левая перфорированная полоса */}
+                          <rect
+                            x={x - 8}
+                            y={y - 5}
+                            width="12"
+                            height={screenshotHeight + 10}
+                            fill="#2D2D2D"
+                            rx="2"
+                          />
+                          
+                          {/* Отверстия перфорации */}
+                          {Array.from({length: Math.floor((screenshotHeight + 10) / 8)}).map((_, holeIndex) => (
+                            <rect
+                              key={`hole-${holeIndex}`}
+                              x={x - 6}
+                              y={y - 3 + holeIndex * 8}
+                              width="8"
+                              height="4"
+                              fill="#F3F4F6"
+                              rx="2"
+                            />
+                          ))}
+                        </g>
+                        
+                        {/* Основная рамка кадра */}
                         <rect
-                          x={x + 2}
-                          y={y + 2}
-                          width={screenshotWidth - 4}
-                          height={screenshotHeight - 20}
-                          fill="#F3F4F6"
-                          stroke="#D1D5DB"
-                          strokeWidth="1"
+                          x={x}
+                          y={y}
+                          width={screenshotWidth}
+                          height={screenshotHeight}
+                          fill="#1F1F1F"
+                          stroke="#2D2D2D"
+                          strokeWidth="2"
                           rx="2"
+                          className="cursor-pointer hover:stroke-orange-400"
+                                                onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setHoveredScreenshot(current => 
+                          current?.timestamp === screenshot.timestamp ? null : {
+                            timestamp: screenshot.timestamp,
+                            imagePath,
+                            x: rect.right + 10,
+                            y: rect.top
+                          }
+                        );
+                      }}
+                      onMouseEnter={(e) => {
+                        if (imagePath) {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setHoveredScreenshot({
+                            timestamp: screenshot.timestamp,
+                            imagePath,
+                            x: rect.right + 10,
+                            y: rect.top
+                          });
+                        }
+                      }}
+                      onMouseLeave={() => {
+                        // Не закрываем при уходе мыши, если превью было открыто кликом
+                        if (!hoveredScreenshot) {
+                          setHoveredScreenshot(null);
+                        }
+                      }}
                         />
                         
+                        {/* Реальное изображение скриншота */}
+                        {screenshotsLoading ? (
+                          <>
+                            {/* Индикатор загрузки */}
+                            <rect
+                              x={x + 4}
+                              y={y + 4}
+                              width={screenshotWidth - 8}
+                              height={screenshotHeight - 8}
+                              fill="#F9FAFB"
+                              stroke="#E5E7EB"
+                              strokeWidth="1"
+                              rx="1"
+                            />
+                            
+                            <text
+                              x={x + screenshotWidth / 2}
+                              y={y + screenshotHeight / 2}
+                              textAnchor="middle"
+                              className="text-xs fill-gray-500"
+                              style={{ fontSize: '10px' }}
+                            >
+                              Загрузка...
+                            </text>
+                          </>
+                        ) : imagePath ? (
+                          <image
+                            x={x + 4}
+                            y={y + 4}
+                            width={screenshotWidth - 8}
+                            height={screenshotHeight - 8}
+                            href={imagePath}
+                            preserveAspectRatio="xMidYMid slice"
+                                                    className="cursor-pointer hover:opacity-90"
+                        onClick={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setHoveredScreenshot(current => 
+                            current?.timestamp === screenshot.timestamp ? null : {
+                              timestamp: screenshot.timestamp,
+                              imagePath,
+                              x: rect.right + 10,
+                              y: rect.top
+                            }
+                          );
+                        }}
+                        onMouseEnter={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setHoveredScreenshot({
+                            timestamp: screenshot.timestamp,
+                            imagePath,
+                            x: rect.right + 10,
+                            y: rect.top
+                          });
+                        }}
+                        onMouseLeave={() => {
+                          // Не закрываем при уходе мыши, если превью было открыто кликом
+                          if (!hoveredScreenshot) {
+                            setHoveredScreenshot(null);
+                          }
+                        }}
+                          />
+                        ) : (
+                          <>
+                            {/* Fallback placeholder если путь к изображению не найден */}
+                            <rect
+                              x={x + 4}
+                              y={y + 4}
+                              width={screenshotWidth - 8}
+                              height={screenshotHeight - 8}
+                              fill="#F3F4F6"
+                              stroke="#D1D5DB"
+                              strokeWidth="1"
+                              rx="1"
+                            />
+                            
+                            <text
+                              x={x + screenshotWidth / 2}
+                              y={y + screenshotHeight / 2}
+                              textAnchor="middle"
+                              className="text-xs fill-gray-400"
+                              style={{ fontSize: '12px' }}
+                            >
+                              🖼️
+                            </text>
+                          </>
+                        )}
+                        
+                        {/* Номер кадра в углу */}
                         <text
-                          x={x + screenshotWidth / 2}
-                          y={y + (screenshotHeight - 20) / 2 + 2}
-                          textAnchor="middle"
-                          className="text-xs fill-gray-400"
-                          style={{ fontSize: '12px' }}
+                          x={x + screenshotWidth - 6}
+                          y={y + 12}
+                          textAnchor="end"
+                          className="text-xs fill-orange-400"
+                          style={{ fontSize: '8px', fontFamily: 'monospace' }}
                         >
-                          🖼️
+                          #{index + 1}
                         </text>
-                      </>
-                    )}
-                    
-                    {/* Время скриншота */}
-                    <text
-                      x={x + screenshotWidth / 2}
-                      y={y + screenshotHeight - 4}
-                      textAnchor="middle"
-                      className="text-xs fill-gray-600"
-                      style={{ fontSize: '10px' }}
-                    >
-                      {formatTime(screenshot.timestamp)}
-                    </text>
-                    
-                    {/* Описание скриншота при наведении */}
-                    {screenshot.description && (
-                      <title>{screenshot.description}</title>
-                    )}
-                  </g>
-                );
-              })}
+                        
+                      </g>
+                    );
+                  })}
 
-              {/* Подписи треков */}
-              {Array.from({length: 5}).map((_, trackIndex) => {
-                let x, trackName, trackColor;
-                
-                if (trackIndex < 3) {
-                  // Первые 3 трека: Визуальные, Аудио, Текстовые
-                  x = timeAxisWidth + trackIndex * trackWidth + trackWidth / 2;
-                  const trackNames = ['Визуальные', 'Аудио', 'Текстовые'];
-                  const trackColors = ['#8B5CF6', '#10B981', '#3B82F6'];
-                  trackName = trackNames[trackIndex];
-                  trackColor = trackColors[trackIndex];
-                } else if (trackIndex === 3) {
-                  // Трек скриншотов (4-й трек)
-                  x = timeAxisWidth + 3 * trackWidth + screenshotsTrackWidth / 2;
-                  trackName = 'Скриншоты';
-                  trackColor = '#F97316';
-                } else {
-                  // Информационный блок (5-й трек)
-                  x = timeAxisWidth + 3 * trackWidth + screenshotsTrackWidth + trackWidth / 2;
-                  trackName = 'Информация';
-                  trackColor = '#6B7280';
-                }
-                
-                return (
-                  <g key={`track-header-${trackIndex}`}>
-                    <text 
-                      x={x} 
-                      y={15} 
-                      textAnchor="middle" 
-                      className="text-sm font-bold"
-                      fill={trackColor}
-                    >
-                      {trackName}
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
-          </div>
-        </div>
-      </div>
-
-          {/* Статистика под диаграммой */}
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-        {showAudio && hasAudioBlocks && (
-          <div className="bg-white p-4 rounded-lg border border-green-200 shadow-sm">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-4 h-4 bg-green-500 rounded border border-green-600"></div>
-              <h4 className="font-semibold text-gray-900">Аудио блоки</h4>
-            </div>
-            <div className="text-sm text-gray-600">
-              {analysis.audioAnalysis?.groups?.length || 0} блоков на таймлайне
-            </div>
-            <div className="text-xs text-gray-500 mt-1">
-              Общее время: {(analysis.audioAnalysis?.groups || []).reduce((total, block) => total + (block.endTime - block.startTime), 0).toFixed(1)}с
-            </div>
-          </div>
-        )}
-        
-        {showText && hasTextBlocks && (
-          <div className="bg-white p-4 rounded-lg border border-blue-200 shadow-sm">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-4 h-4 bg-blue-500 rounded border border-blue-600"></div>
-              <h4 className="font-semibold text-gray-900">Текстовые блоки</h4>
-            </div>
-            <div className="text-sm text-gray-600">
-              {analysis.textualVisualAnalysis?.groups?.length || 0} блоков на таймлайне
-            </div>
-            <div className="text-xs text-gray-500 mt-1">
-              Общее время: {(analysis.textualVisualAnalysis?.groups || []).reduce((total, block) => total + (block.endTime - block.startTime), 0).toFixed(1)}с
-            </div>
-          </div>
-        )}
-        
-        {showVisual && hasVisualBlocks && (
-          <div className="bg-white p-4 rounded-lg border border-purple-200 shadow-sm">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-4 h-4 bg-purple-500 rounded border border-purple-600"></div>
-              <h4 className="font-semibold text-gray-900">Визуальные блоки</h4>
-            </div>
-            <div className="text-sm text-gray-600">
-              {analysis.visualAnalysis?.groups?.length || 0} блоков на таймлайне
-            </div>
-            <div className="text-xs text-gray-500 mt-1">
-              Общее время: {(analysis.visualAnalysis?.groups || []).reduce((total, block) => total + (block.endTime - block.startTime), 0).toFixed(1)}с
-            </div>
-          </div>
-        )}
-        
-        {showScreenshots && hasScreenshots && (
-          <div className="bg-white p-4 rounded-lg border border-orange-200 shadow-sm">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-4 h-4 bg-orange-500 rounded border border-orange-600"></div>
-              <h4 className="font-semibold text-gray-900">Скриншоты</h4>
-              {screenshotsLoading && (
-                <div className="w-3 h-3 border border-orange-300 border-t-orange-600 rounded-full animate-spin"></div>
-              )}
-            </div>
-            <div className="text-sm text-gray-600">
-              {analysis.visualAnalysis?.screenshots?.length || 0} скриншотов на таймлайне
-            </div>
-            <div className="text-xs text-gray-500 mt-1">
-              {screenshotsLoading ? 'Загрузка путей к файлам...' : 
-               Object.keys(screenshotPaths).length > 0 ? 'Кликните для увеличения' : 
-               'Файлы скриншотов не найдены'}
-            </div>
-          </div>
-        )}
-      </div>
-      
-      {/* Сводка */}
-      <div className="mt-6 p-4 bg-gray-50 rounded-lg border">
-        <div className="text-sm text-gray-700">
-          <span className="font-medium">Треков используется:</span> {3 + (showScreenshots ? 1 : 0)} • 
-          <span className="font-medium ml-2">Блоков отображено:</span> {blocksWithTracks.length} из {
-            (analysis.audioAnalysis?.groups?.length || 0) + 
-            (analysis.textualVisualAnalysis?.groups?.length || 0) + 
-            (analysis.visualAnalysis?.groups?.length || 0)
-          } общих • 
-          {showScreenshots && hasScreenshots && (
-            <>
-              <span className="font-medium ml-2">Скриншотов:</span> {analysis.visualAnalysis?.screenshots?.length || 0} • 
-            </>
-          )}
-          <span className="font-medium ml-2">Проблемных блоков:</span> <span className="text-red-600 font-bold">{highlightedBlocks.size}</span> • 
-          <span className="font-medium ml-2">Общая длительность:</span> {formatTime(maxDuration)}
-        </div>
-        {highlightedBlocks.size > 0 && (
-          <div className="mt-2 text-xs text-orange-600">
-            🎯 Цветным фоном выделены блоки с наивысшей скоростью падения в каждом треке (зеленый = низкое падение, красный = критическое)
-          </div>
-        )}
-        {showScreenshots && hasScreenshots && (
-          <div className="mt-2 text-xs text-orange-600">
-            🖼️ {screenshotsLoading ? 'Загружаем скриншоты...' : 
-                Object.keys(screenshotPaths).length > 0 ? 'Скриншоты показывают ключевые моменты из визуального анализа • Кликните для увеличения' :
-                'Скриншоты из визуального анализа (файлы не найдены на сервере)'}
-          </div>
-        )}
-      </div>
-      
-      {blocksWithTracks.length === 0 && (showAudio || showText || showVisual) && (
-        <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <div className="text-sm text-yellow-800">
-            ⚠️ Нет блоков для отображения с выбранными фильтрами.
-          </div>
-        </div>
-      )}
-      
-          {!showAudio && !showText && !showVisual && !showScreenshots && (
-            <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <div className="text-sm text-yellow-800">
-                ⚠️ Все треки скрыты. Включите хотя бы один трек для отображения на таймлайне.
+                  {/* Подписи треков */}
+                  {Array.from({length: 5}).map((_, trackIndex) => {
+                    let x, trackName, trackColor;
+                    
+                    if (trackIndex < 3) {
+                      // Первые 3 трека: Визуальные, Аудио, Текстовые
+                      x = timeAxisWidth + trackIndex * trackWidth + trackWidth / 2;
+                      const trackNames = ['Визуальные', 'Аудио', 'Текстовые'];
+                      const trackColors = ['#8B5CF6', '#10B981', '#3B82F6'];
+                      trackName = trackNames[trackIndex];
+                      trackColor = trackColors[trackIndex];
+                    } else if (trackIndex === 3) {
+                      // Трек скриншотов (4-й трек)
+                      x = timeAxisWidth + 3 * trackWidth + screenshotsTrackWidth / 2;
+                      trackName = 'Скриншоты';
+                      trackColor = '#F97316';
+                    } else {
+                      // Информационный блок (5-й трек)
+                      x = timeAxisWidth + 3 * trackWidth + screenshotsTrackWidth + trackWidth / 2;
+                      trackName = 'Информация';
+                      trackColor = '#6B7280';
+                    }
+                    
+                    return (
+                      <g key={`track-header-${trackIndex}`}>
+                        <text 
+                          x={x} 
+                          y={15} 
+                          textAnchor="middle" 
+                          className="text-sm font-bold"
+                          fill={trackColor}
+                        >
+                          {trackName}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </svg>
               </div>
             </div>
-          )}
+          </div>
         </div>
-
-
       </div>
     </div>
   );

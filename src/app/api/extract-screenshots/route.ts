@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import ffmpeg from 'fluent-ffmpeg';
+import { extractScreenshots } from '@/lib/videoProcessing';
 import path from 'path';
 import fs from 'fs';
-import { v4 as uuidv4 } from 'uuid';
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,62 +13,23 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    const screenshotsId = filePairId;
-    const outputDir = path.join(process.cwd(), 'public', 'uploads', sessionId, 'screenshots', screenshotsId);
+    const fullVideoPath = path.join(process.cwd(), 'public', videoPath);
     
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
+    if (!fs.existsSync(fullVideoPath)) {
+      return NextResponse.json({ 
+        error: 'Video file not found' 
+      }, { status: 404 });
     }
 
-    const screenshots: string[] = [];
-    const step = 0.5;
-    const totalFrames = Math.ceil(duration / step);
-
-    return new Promise((resolve) => {
-      let processedFrames = 0;
-      let hasError = false;
-
-      for (let i = 0; i < totalFrames; i++) {
-        const timestamp = i * step;
-        const filename = `screenshot_${timestamp.toFixed(1)}s.jpg`;
-        const outputPath = path.join(outputDir, filename);
-        
-        ffmpeg(videoPath)
-          .seekInput(timestamp)
-          .frames(1)
-          .output(outputPath)
-          .on('end', () => {
-            screenshots.push(outputPath);
-            processedFrames++;
-            
-            if (processedFrames === totalFrames && !hasError) {
-              screenshots.sort((a, b) => {
-                const aTime = parseFloat(a.match(/screenshot_(\d+\.?\d*)s\.jpg$/)?.[1] || '0');
-                const bTime = parseFloat(b.match(/screenshot_(\d+\.?\d*)s\.jpg$/)?.[1] || '0');
-                return aTime - bTime;
-              });
-              
-              resolve(NextResponse.json({ 
-                screenshots,
-                screenshotsId,
-                totalFrames: screenshots.length,
-                step,
-                message: 'Screenshots extracted successfully' 
-              }));
-            }
-          })
-          .on('error', (err) => {
-            if (!hasError) {
-              hasError = true;
-              console.error('FFmpeg error:', err);
-              resolve(NextResponse.json({ 
-                error: 'Failed to extract screenshots',
-                details: err.message 
-              }, { status: 500 }));
-            }
-          })
-          .run();
-      }
+    // Используем функцию из videoProcessing.ts, которая делает последовательную обработку
+    const screenshots = await extractScreenshots(fullVideoPath, sessionId, duration, filePairId);
+    
+    return NextResponse.json({ 
+      screenshots,
+      screenshotsId: filePairId,
+      totalFrames: screenshots.length,
+      step: 0.5,
+      message: 'Screenshots extracted successfully' 
     });
 
   } catch (error) {

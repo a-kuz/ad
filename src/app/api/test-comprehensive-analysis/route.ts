@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       if (filePair) {
         const blockDropoutAnalysis = testAnalysis.blockDropoutAnalysis || [];
         const videoAnalysis = {
-          id: uuidv4(),
+          id: filePairId,
           insights: `Тестовый комплексный анализ. Найдено ${blockDropoutAnalysis.length} блоков контента.`,
           recommendations: blockDropoutAnalysis
             .filter(block => block.relativeDropout > 20)

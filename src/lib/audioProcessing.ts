@@ -4,35 +4,38 @@ import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { AudioAnalysis, ContentBlock } from '@/types';
+import { systemMonitor } from './systemMonitor';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
 export async function extractAudioFromVideo(videoPath: string, sessionId: string, logger?: any): Promise<string> {
+  console.log('=== AUDIO EXTRACTION START ===');
+  console.log('Input video path:', videoPath);
+  console.log('Session ID:', sessionId);
+  
+  // Проверяем существование входного файла
+  if (!fs.existsSync(videoPath)) {
+    console.error('ERROR: Input video file does not exist:', videoPath);
+    throw new Error(`Input video file not found: ${videoPath}`);
+  }
+  
+  const audioId = uuidv4();
+  const outputDir = path.join(process.cwd(), 'public', 'uploads', sessionId, 'audio');
+  
+  if (!fs.existsSync(outputDir)) {
+    console.log('Creating output directory:', outputDir);
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
+
+  const audioPath = path.join(outputDir, `${audioId}.mp3`);
+  console.log('Output audio path:', audioPath);
+
+  // Ожидаем свободный слот для ffmpeg
+  await systemMonitor.acquireFFmpegSlot();
+
   return new Promise((resolve, reject) => {
-    console.log('=== AUDIO EXTRACTION START ===');
-    console.log('Input video path:', videoPath);
-    console.log('Session ID:', sessionId);
-    
-    // Проверяем существование входного файла
-    if (!fs.existsSync(videoPath)) {
-      console.error('ERROR: Input video file does not exist:', videoPath);
-      reject(new Error(`Input video file not found: ${videoPath}`));
-      return;
-    }
-    
-    const audioId = uuidv4();
-    const outputDir = path.join(process.cwd(), 'public', 'uploads', sessionId, 'audio');
-    
-    if (!fs.existsSync(outputDir)) {
-      console.log('Creating output directory:', outputDir);
-      fs.mkdirSync(outputDir, { recursive: true });
-    }
-
-    const audioPath = path.join(outputDir, `${audioId}.mp3`);
-    console.log('Output audio path:', audioPath);
-
     const command = ffmpeg(videoPath)
       .toFormat('mp3')
       .audioCodec('libmp3lame')
@@ -55,12 +58,14 @@ export async function extractAudioFromVideo(videoPath: string, sessionId: string
     });
 
     command.on('end', () => {
+      systemMonitor.releaseFFmpegSlot(); // Освобождаем слот
       console.log('Audio extraction completed successfully:', audioPath);
       console.log('=== AUDIO EXTRACTION END ===');
       resolve(audioPath);
     });
 
     command.on('error', (err, stdout, stderr) => {
+      systemMonitor.releaseFFmpegSlot(); // Освобождаем слот при ошибке
       console.error('=== FFmpeg ERROR ===');
       console.error('Error:', err.message);
       console.error('stdout:', stdout);

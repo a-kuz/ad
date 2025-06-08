@@ -7,6 +7,7 @@ import { FiArrowLeft, FiAlertTriangle, FiCheckCircle, FiClock } from 'react-icon
 import Link from 'next/link';
 import Image from 'next/image';
 import ComprehensiveAnalysisView from '@/components/ComprehensiveAnalysisView';
+import MiniDropoutChart from '@/components/MiniDropoutChart';
 
 // Форматирование времени (секунды -> MM:SS)
 const formatTime = (seconds: number): string => {
@@ -53,6 +54,33 @@ const getPointsFromDropoutCurve = (dropoutCurve: any): { x: number, y: number }[
     x: point.timestamp,
     y: (point.viewers / initialViewers) * 100
   }));
+};
+
+// Преобразование данных для MiniDropoutChart
+const getDropoutCurveTable = (dropoutCurve: any) => {
+  if (!dropoutCurve) return null;
+
+  // Если это уже DropoutCurveTable формат
+  if (dropoutCurve.points && dropoutCurve.points.length > 0 && dropoutCurve.points[0].retentionPercentage !== undefined) {
+    return dropoutCurve;
+  }
+
+  // Если это DropoutCurve формат, преобразуем
+  if (dropoutCurve.dropouts && dropoutCurve.initialViewers) {
+    const points = dropoutCurve.dropouts.map((dropout: any) => ({
+      timestamp: dropout.time,
+      retentionPercentage: (dropout.viewersAfter / dropoutCurve.initialViewers) * 100,
+      dropoutPercentage: 100 - ((dropout.viewersAfter / dropoutCurve.initialViewers) * 100)
+    }));
+
+    return {
+      points,
+      step: 0.5,
+      totalDuration: dropoutCurve.totalDuration || 0
+    };
+  }
+
+  return null;
 };
 
 export default function AnalysisPage() {
@@ -163,160 +191,95 @@ export default function AnalysisPage() {
   const analysis = filePair.analysis;
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        <div className="w-full">
-          <div className="mb-6 sm:mb-8">
-            <Link
-              href={`/upload/${sessionId}`}
-              className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 mb-4 font-medium text-sm sm:text-base touch-manipulation"
-            >
-              <FiArrowLeft className="w-4 h-4" />
-              Назад к сессии
-            </Link>
+    <main className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 py-6">
+
+        {/* Header */}
+        <div className="mb-6">
+          <Link
+            href={`/upload/${sessionId}`}
+            className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 mb-4 font-medium text-sm"
+          >
+            <FiArrowLeft className="w-4 h-4" />
+            Назад к сессии
+          </Link>
+          
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 mb-2">
+                Анализ видео
+              </h1>
+              <p className="text-gray-600 text-sm">
+                {filePair.generatedTitle || filePair.videoName}
+              </p>
+            </div>
             
-            <div className="bg-white rounded-xl p-4 sm:p-6 shadow-lg">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-                <div className="lg:col-span-2">
-                  <h1 className="text-xl sm:text-2xl lg:text-3xl font-thin text-slate-800 mb-4">
-                    {filePair.videoName}
-                  </h1>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-                    <div>
-                      <h3 className="font-thin text-slate-600 mb-2 text-sm sm:text-base">Информация о файлах</h3>
-                      <div className="space-y-1 text-slate-700 text-xs sm:text-sm">
-                        <div><span className="font-medium">Видео:</span> <span className="break-words">{filePair.videoName}</span></div>
-                        <div><span className="font-medium">Загружено:</span> {new Date(filePair.uploadedAt).toLocaleString('ru-RU')}</div>
-                      </div>
-                    </div>
-                    <div>
-                      <h3 className="font-thin text-slate-600 mb-2 text-sm sm:text-base">Статус анализа</h3>
-                      {comprehensiveAnalysis ? (
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                          <div className="flex items-center gap-2">
-                            <FiCheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" />
-                            <span className="text-green-700 font-medium text-xs sm:text-sm">Комплексный анализ завершен</span>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <FiClock className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-600" />
-                          <span className="text-yellow-700 font-medium text-xs sm:text-sm">Анализ в процессе...</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                
-                {/* График отвалов в правом верхнем углу */}
-                {comprehensiveAnalysis && (
-                  <div className="lg:col-span-1">
-                    <h3 className="font-thin text-slate-600 mb-2 text-sm sm:text-base">График отвалов аудитории</h3>
-                    <div className="bg-gray-50 p-3 rounded-lg">
-                      <div className="h-32 relative">
-                        <svg viewBox="0 0 100 50" className="w-full h-full">
-                          {/* График без осей */}
-                          <polyline
-                            points={getPointsFromDropoutCurve(comprehensiveAnalysis?.dropoutCurve).map((p: any) => {
-                              const x = (p.x / (filePair.videoMetadata?.duration || 1)) * 100;
-                              const y = 50 - (p.y / 2);
-                              return `${x},${y}`;
-                            }).join(' ')}
-                            fill="none"
-                            stroke="#3b82f6"
-                            strokeWidth="1"
-                          />
-                          
-                          {/* Заполнение под графиком */}
-                          <path
-                            d={`
-                              M0,50 
-                              ${getPointsFromDropoutCurve(comprehensiveAnalysis?.dropoutCurve).map((p: any) => {
-                                const x = (p.x / (filePair.videoMetadata?.duration || 1)) * 100;
-                                const y = 50 - (p.y / 2);
-                                return `L${x},${y}`;
-                              }).join(' ')} 
-                              L100,50 Z
-                            `}
-                            fill="url(#blue-gradient)"
-                            opacity="0.2"
-                          />
-                          
-                          {/* Определение градиента */}
-                          <defs>
-                            <linearGradient id="blue-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                              <stop offset="0%" stopColor="#3b82f6" stopOpacity="1" />
-                              <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
-                            </linearGradient>
-                          </defs>
-                        </svg>
-                      </div>
-                      <div className="mt-2 text-center">
-                        <div className="text-xs text-gray-500">
-                          Средний процент досмотра: {calculateAverageRetention(comprehensiveAnalysis?.dropoutCurve)?.toFixed(1) || '0.0'}%
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
+            {/* График отвалов аудитории */}
+            {comprehensiveAnalysis && (
+              <div className="ml-4">
+                <MiniDropoutChart 
+                  dropoutData={getDropoutCurveTable(comprehensiveAnalysis.dropoutCurve)} 
+                  width={120} 
+                  height={80} 
+                />
               </div>
+            )}
+          </div>
+        </div>
+
+        {comprehensiveAnalysis && (
+          <div className="w-full">
+            {/* Компонент с полным анализом */}
+            <ComprehensiveAnalysisView 
+              analysis={comprehensiveAnalysis} 
+              sessionId={sessionId} 
+              filePairId={filePairId} 
+            />
+          </div>
+        )}
+
+        {/* Если анализ еще не загружен, показываем исходную версию интерфейса */}
+        {!comprehensiveAnalysis && (
+          <div className="space-y-6 sm:space-y-8">
+            <div className="bg-white rounded-xl p-4 sm:p-6 shadow-lg">
+              <div className="text-center">
+                <h2 className="text-lg sm:text-xl font-thin text-slate-800 mb-4">Генерация комплексного анализа</h2>
+                <p className="text-slate-600 mb-6 text-sm sm:text-base">
+                  Создайте детальный анализ видео с разбором по блокам
+                </p>
+                <button
+                  onClick={async () => {
+                    try {
+                      const response = await fetch('/api/test-comprehensive-analysis', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sessionId, filePairId })
+                      });
+                      
+                      if (response.ok) {
+                        const result = await response.json();
+                        setComprehensiveAnalysis(result.analysis);
+                      }
+                    } catch (error) {
+                      console.error('Failed to generate test analysis:', error);
+                    }
+                  }}
+                  className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+                >
+                  Сгенерировать комплексный анализ
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl p-8 sm:p-12 shadow-lg text-center">
+              <FiClock className="w-12 h-12 sm:w-16 sm:h-16 text-yellow-500 mx-auto mb-4" />
+              <h2 className="text-xl sm:text-2xl font-thin text-slate-800 mb-4">Ожидание комплексного анализа</h2>
+              <p className="text-slate-600 mb-6 text-sm sm:text-base">
+                Ваши файлы загружены. Нажмите кнопку выше для генерации комплексного анализа.
+              </p>
             </div>
           </div>
-
-          {comprehensiveAnalysis && (
-            <div className="w-full">
-              {/* Компонент с полным анализом */}
-              <ComprehensiveAnalysisView 
-                analysis={comprehensiveAnalysis} 
-                sessionId={sessionId} 
-                filePairId={filePairId} 
-              />
-            </div>
-          )}
-
-          {/* Если анализ еще не загружен, показываем исходную версию интерфейса */}
-          {!comprehensiveAnalysis && (
-            <div className="space-y-6 sm:space-y-8">
-              <div className="bg-white rounded-xl p-4 sm:p-6 shadow-lg">
-                <div className="text-center">
-                  <h2 className="text-lg sm:text-xl font-thin text-slate-800 mb-4">Генерация комплексного анализа</h2>
-                  <p className="text-slate-600 mb-6 text-sm sm:text-base">
-                    Создайте детальный анализ видео с разбором по блокам
-                  </p>
-                  <button
-                    onClick={async () => {
-                      try {
-                        const response = await fetch('/api/test-comprehensive-analysis', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ sessionId, filePairId })
-                        });
-                        
-                        if (response.ok) {
-                          const result = await response.json();
-                          setComprehensiveAnalysis(result.analysis);
-                        }
-                      } catch (error) {
-                        console.error('Failed to generate test analysis:', error);
-                      }
-                    }}
-                    className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
-                  >
-                    Сгенерировать комплексный анализ
-                  </button>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl p-8 sm:p-12 shadow-lg text-center">
-                <FiClock className="w-12 h-12 sm:w-16 sm:h-16 text-yellow-500 mx-auto mb-4" />
-                <h2 className="text-xl sm:text-2xl font-thin text-slate-800 mb-4">Ожидание комплексного анализа</h2>
-                <p className="text-slate-600 mb-6 text-sm sm:text-base">
-                  Ваши файлы загружены. Нажмите кнопку выше для генерации комплексного анализа.
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
+        )}
       </div>
     </main>
   );

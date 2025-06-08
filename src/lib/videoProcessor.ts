@@ -1,6 +1,7 @@
 import ffmpeg from 'fluent-ffmpeg';
 import path from 'path';
 import fs from 'fs';
+import { systemMonitor } from './systemMonitor';
 
 export interface VideoMetadata {
   duration: number;
@@ -25,15 +26,18 @@ export interface VideoStreamInfo {
 }
 
 export async function getVideoMetadata(videoPath: string): Promise<VideoMetadata> {
-  return new Promise((resolve, reject) => {
-    const fullPath = path.join(process.cwd(), 'public', videoPath);
-    
-    if (!fs.existsSync(fullPath)) {
-      reject(new Error(`Видео файл не найден: ${fullPath}`));
-      return;
-    }
+  const fullPath = path.join(process.cwd(), 'public', videoPath);
+  
+  if (!fs.existsSync(fullPath)) {
+    throw new Error(`Видео файл не найден: ${fullPath}`);
+  }
 
+  await systemMonitor.acquireFFmpegSlot();
+
+  return new Promise((resolve, reject) => {
     ffmpeg.ffprobe(fullPath, (err, metadata) => {
+      systemMonitor.releaseFFmpegSlot();
+      
       if (err) {
         reject(new Error(`Ошибка при анализе видео: ${err.message}`));
         return;
@@ -77,26 +81,30 @@ export async function extractVideoThumbnail(
   videoPath: string, 
   timestamp: number = 5
 ): Promise<string> {
+  const fullVideoPath = path.join(process.cwd(), 'public', videoPath);
+  const thumbnailDir = path.join(process.cwd(), 'public', 'uploads', 'thumbnails');
+  
+  // Создаем директорию для превью если её нет
+  if (!fs.existsSync(thumbnailDir)) {
+    fs.mkdirSync(thumbnailDir, { recursive: true });
+  }
+
+  const thumbnailName = `${Date.now()}-thumb.jpg`;
+  const thumbnailPath = path.join(thumbnailDir, thumbnailName);
+
+  await systemMonitor.acquireFFmpegSlot();
+
   return new Promise((resolve, reject) => {
-    const fullVideoPath = path.join(process.cwd(), 'public', videoPath);
-    const thumbnailDir = path.join(process.cwd(), 'public', 'uploads', 'thumbnails');
-    
-    // Создаем директорию для превью если её нет
-    if (!fs.existsSync(thumbnailDir)) {
-      fs.mkdirSync(thumbnailDir, { recursive: true });
-    }
-
-    const thumbnailName = `${Date.now()}-thumb.jpg`;
-    const thumbnailPath = path.join(thumbnailDir, thumbnailName);
-
     ffmpeg(fullVideoPath)
       .seekInput(timestamp)
       .frames(1)
       .output(thumbnailPath)
       .on('end', () => {
+        systemMonitor.releaseFFmpegSlot();
         resolve(`/uploads/thumbnails/${thumbnailName}`);
       })
       .on('error', (err) => {
+        systemMonitor.releaseFFmpegSlot();
         reject(new Error(`Ошибка при создании превью: ${err.message}`));
       })
       .run();

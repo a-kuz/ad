@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import ffmpeg from 'fluent-ffmpeg';
+import { extractAudioFromVideo } from '@/lib/audioProcessing';
 import path from 'path';
 import fs from 'fs';
-import { v4 as uuidv4 } from 'uuid';
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,35 +11,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Video path and session ID are required' }, { status: 400 });
     }
 
-    const audioId = uuidv4();
-    const outputDir = path.join(process.cwd(), 'public', 'uploads', sessionId, 'audio');
+    const fullVideoPath = path.join(process.cwd(), 'public', videoPath);
     
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
+    if (!fs.existsSync(fullVideoPath)) {
+      return NextResponse.json({ 
+        error: 'Video file not found' 
+      }, { status: 404 });
     }
 
-    const audioPath = path.join(outputDir, `${audioId}.mp3`);
-
-    return new Promise((resolve) => {
-      ffmpeg(videoPath)
-        .toFormat('mp3')
-        .audioCodec('libmp3lame')
-        .audioBitrate(128)
-        .on('end', () => {
-          resolve(NextResponse.json({ 
-            audioPath,
-            audioId,
-            message: 'Audio extracted successfully' 
-          }));
-        })
-        .on('error', (err) => {
-          console.error('FFmpeg error:', err);
-          resolve(NextResponse.json({ 
-            error: 'Failed to extract audio',
-            details: err.message 
-          }, { status: 500 }));
-        })
-        .save(audioPath);
+    // Используем функцию из audioProcessing.ts для правильной асинхронной обработки
+    const audioPath = await extractAudioFromVideo(fullVideoPath, sessionId);
+    
+    const audioId = path.basename(audioPath, '.mp3');
+    
+    return NextResponse.json({ 
+      audioPath,
+      audioId,
+      message: 'Audio extracted successfully' 
     });
 
   } catch (error) {

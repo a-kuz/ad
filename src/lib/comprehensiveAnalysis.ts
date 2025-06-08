@@ -8,6 +8,8 @@ import { generateTestAnalysis } from './testAnalysis';
 import { validateAndFixAnalysis } from './mathValidation';
 import { AnalysisLogger } from './analysisLogger';
 import { clearAnalysisLogs } from './database';
+import path from 'path';
+import fs from 'fs';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -32,10 +34,6 @@ export async function performComprehensiveAnalysis(
     console.log('Graph path (original):', graphPath);
     
     await logger.startStep('VALIDATION', 'Проверка файлов и подготовка');
-    
-    // Конвертируем относительные пути в абсолютные
-    const path = require('path');
-    const fs = require('fs');
     
     // Если путь начинается с /uploads, добавляем public/
     const absoluteVideoPath = videoPath.startsWith('/uploads') ? 
